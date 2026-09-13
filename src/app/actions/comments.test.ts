@@ -59,7 +59,7 @@ describe("addComment", () => {
 		["本文が空", { body: "   " }, /コメントを入力/],
 		["本文が長すぎる", { body: "あ".repeat(2001) }, /長すぎます/],
 	])("%s なら投稿しない", async (_name, override, pattern) => {
-		const state = await addComment({}, formData({ entryId: 1, body: "x", ...override }));
+		const state = await addComment({}, formData({ entryId: 1, ...override }));
 		expect(state.error).toMatch(pattern);
 		expect(await listComments(t.db, 1)).toHaveLength(0);
 	});

@@ -41,3 +41,7 @@ wrangler.jsonc
 cloudflare-env.d.ts
 .dev.vars*
 !.dev.vars.example
+
+# Next.js が自動生成する AI エージェント向けルール
+AGENTS.md
+CLAUDE.md
