@@ -1,6 +1,7 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import Link from "next/link";
+import { ServiceWorkerRegistrar } from "@/components/service-worker";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { auth, signOut } from "@/lib/auth";
 import { THEME_INIT_SCRIPT } from "@/lib/theme";
@@ -12,6 +13,22 @@ const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"]
 export const metadata: Metadata = {
 	title: "たびログ",
 	description: "旅先で食べたもの・買ったものと、その値段や感想を残すメモ",
+	applicationName: "たびログ",
+	icons: {
+		icon: [{ url: "/icons/favicon-32.png", sizes: "32x32", type: "image/png" }],
+		apple: [{ url: "/icons/apple-touch-icon.png", sizes: "180x180" }],
+	},
+	// iOS はマニフェストの display を見ないため、こちらで単独起動を指定する
+	appleWebApp: { capable: true, title: "たびログ", statusBarStyle: "default" },
+};
+
+export const viewport: Viewport = {
+	themeColor: [
+		{ media: "(prefers-color-scheme: light)", color: "#0284c7" },
+		{ media: "(prefers-color-scheme: dark)", color: "#0a0a0a" },
+	],
+	// ホーム画面から起動したときに端末の表示領域いっぱいに広げる
+	viewportFit: "cover",
 };
 
 async function Header() {
@@ -57,6 +74,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 			<body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
 				<Header />
 				<main className="mx-auto max-w-4xl px-4 py-6">{children}</main>
+				<ServiceWorkerRegistrar />
 			</body>
 		</html>
 	);
