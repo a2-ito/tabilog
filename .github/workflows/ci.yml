@@ -44,7 +44,6 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci --no-audit --no-fund
-      - name: Generate Cloudflare bindings types
-        run: npm run cf:config && npm run cf-typegen
+      # cf:build が wrangler.jsonc と型定義の生成まで面倒を見る
       - name: Build
         run: npm run cf:build
