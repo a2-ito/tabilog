@@ -49,8 +49,13 @@ export const entries = sqliteTable(
 		kind: text("kind").notNull().default("food"),
 		title: text("title").notNull(),
 		place: text("place"),
-		/** 旅行の通貨での最小単位金額。未入力なら null */
+		/** amountCurrency の最小単位での金額。未入力なら null */
 		amountMinor: integer("amount_minor"),
+		/**
+		 * 支払った通貨。旅行の通貨とは限らない（現地の旅行でも日本で先に払うことがある）。
+		 * 既存の記録は旅行の通貨で入力されていたため、移行時にその値を入れている。
+		 */
+		amountCurrency: text("amount_currency"),
 		/** 1〜5。未評価なら null */
 		rating: integer("rating"),
 		/** 感想・美味しかったか */

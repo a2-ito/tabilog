@@ -6,7 +6,7 @@ import { getDb } from "@/db";
 import { getTrip, listEntries } from "@/db/queries";
 import { requireUser } from "@/lib/auth";
 import { formatDateRange, formatWallClock } from "@/lib/datetime";
-import { formatJpy, formatMoney, needsJpyConversion, sumMinor, toJpy } from "@/lib/money";
+import { formatJpy, formatMoney, jpyToLocalMinor, needsJpyConversion, sumAsJpy } from "@/lib/money";
 import { photoUrl } from "@/lib/photos";
 
 const KIND_LABELS: Record<string, string> = { food: "🍜 食べた", shopping: "🛍️ 買った", other: "📌 その他" };
@@ -36,7 +36,12 @@ export default async function TripPage({ params, searchParams }: PageProps<"/tri
 		minRating: Number.isInteger(minRating) && minRating! >= 1 && minRating! <= 5 ? minRating : undefined,
 	});
 
-	const totalMinor = sumMinor(entries.map((e) => e.amountMinor ?? 0));
+	// 記録ごとに通貨が違いうるので、円に寄せてから現地通貨に直して見せる
+	const amounts = entries
+		.filter((e) => e.amountMinor !== null)
+		.map((e) => ({ minor: e.amountMinor as number, currency: e.amountCurrency ?? trip.currency }));
+	const totalJpy = sumAsJpy(amounts, trip.currency, trip.rateToJpy);
+	const totalMinor = jpyToLocalMinor(totalJpy, trip.currency, trip.rateToJpy);
 	const filterHref = (k: string) => {
 		const params = new URLSearchParams();
 		if (k) params.set("kind", k);
@@ -79,9 +84,7 @@ export default async function TripPage({ params, searchParams }: PageProps<"/tri
 			<div className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950">
 				<p className="text-sm text-zinc-500">表示中の {entries.length} 件の合計</p>
 				<p className="text-2xl font-bold">{formatMoney(totalMinor, trip.currency)}</p>
-				{needsJpyConversion(trip.currency) && (
-					<p className="text-sm text-zinc-500">約 {formatJpy(toJpy(totalMinor, trip.currency, trip.rateToJpy))}</p>
-				)}
+				{needsJpyConversion(trip.currency) && <p className="text-sm text-zinc-500">約 {formatJpy(totalJpy)}</p>}
 			</div>
 
 			<div className="flex flex-wrap gap-2 text-sm">
@@ -136,7 +139,9 @@ export default async function TripPage({ params, searchParams }: PageProps<"/tri
 											{entry.title}
 										</h2>
 										{entry.amountMinor != null && (
-											<span className="text-sm font-medium">{formatMoney(entry.amountMinor, trip.currency)}</span>
+											<span className="text-sm font-medium">
+												{formatMoney(entry.amountMinor, entry.amountCurrency ?? trip.currency)}
+											</span>
 										)}
 									</div>
 									<p className="flex flex-wrap items-center gap-x-2 text-xs text-zinc-500">

@@ -27,8 +27,8 @@ export async function upsertUser(
 
 export type TripSummary = Trip & {
 	entryCount: number;
-	/** 金額が入力された記録の合計（旅行の通貨の最小単位） */
-	totalMinor: number;
+	/** 記録ごとの金額と通貨。合計の出し方は表示側（lib/money）に任せる */
+	amounts: { minor: number; currency: string }[];
 };
 
 export async function listTrips(db: Db): Promise<TripSummary[]> {
@@ -36,14 +36,35 @@ export async function listTrips(db: Db): Promise<TripSummary[]> {
 		.select({
 			trip: trips,
 			entryCount: sql<number>`count(${entries.id})`,
-			totalMinor: sql<number>`coalesce(sum(${entries.amountMinor}), 0)`,
 		})
 		.from(trips)
 		.leftJoin(entries, eq(entries.tripId, trips.id))
 		.groupBy(trips.id)
 		.orderBy(desc(sql`coalesce(${trips.startDate}, ${trips.createdAt})`), desc(trips.id));
 
-	return rows.map((r) => ({ ...r.trip, entryCount: Number(r.entryCount), totalMinor: Number(r.totalMinor) }));
+	const amountRows = await db
+		.select({
+			tripId: entries.tripId,
+			minor: entries.amountMinor,
+			currency: entries.amountCurrency,
+		})
+		.from(entries)
+		.where(sql`${entries.amountMinor} is not null`);
+
+	const byTrip = new Map<number, { minor: number; currency: string }[]>();
+	for (const row of amountRows) {
+		if (row.minor === null) continue;
+		const list = byTrip.get(row.tripId) ?? [];
+		// 通貨が入っていない古い記録は、旅行の通貨で入力されたものとして扱う
+		list.push({ minor: row.minor, currency: row.currency ?? "" });
+		byTrip.set(row.tripId, list);
+	}
+
+	return rows.map((r) => ({
+		...r.trip,
+		entryCount: Number(r.entryCount),
+		amounts: (byTrip.get(r.trip.id) ?? []).map((a) => ({ ...a, currency: a.currency || r.trip.currency })),
+	}));
 }
 
 export async function getTrip(db: Db, id: number): Promise<Trip | null> {
@@ -185,6 +206,7 @@ export type EntryInput = {
 	title: string;
 	place?: string;
 	amountMinor?: number;
+	amountCurrency?: string;
 	rating?: number;
 	note?: string;
 	happenedAt: string;
@@ -199,6 +221,7 @@ export async function createEntry(db: Db, tripId: number, input: EntryInput, aut
 			title: input.title,
 			place: input.place ?? null,
 			amountMinor: input.amountMinor ?? null,
+			amountCurrency: input.amountCurrency ?? null,
 			rating: input.rating ?? null,
 			note: input.note ?? null,
 			happenedAt: input.happenedAt,
@@ -217,6 +240,7 @@ export async function updateEntry(db: Db, id: number, input: EntryInput): Promis
 			title: input.title,
 			place: input.place ?? null,
 			amountMinor: input.amountMinor ?? null,
+			amountCurrency: input.amountCurrency ?? null,
 			rating: input.rating ?? null,
 			note: input.note ?? null,
 			happenedAt: input.happenedAt,
