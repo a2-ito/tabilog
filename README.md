@@ -75,6 +75,18 @@ Google OAuth の承認済みリダイレクト URI には以下を登録しま�
 | `npm run preview` | Workers ランタイムでローカル確認 |
 | `npm run cf:deploy` | Cloudflare へデプロイ |
 
+## CI / CD
+
+Pull Request を作ると GitHub Actions で lint・型チェック・テスト・ビルドが走る。
+
+自分が出した PR には自動マージが予約され、検証（`quality` と `build`）が通りしだい
+squash でマージされる。main は保護しており、この 2 つのチェックを通らないと
+マージできない。
+
+fork からの PR と、リポジトリ所有者以外が出した PR は対象外にしている。外部の変更が
+人の目を通さず本番へ出るのを防ぐため。下書きの PR も対象外なので、まだ入れたくない
+ものは Draft にしておく。
+
 ## デプロイ
 
 main への push を Cloudflare の [Workers Builds](https://developers.cloudflare.com/workers/ci-cd/builds/)

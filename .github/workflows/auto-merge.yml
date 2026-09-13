@@ -1,0 +1,28 @@
+name: Auto merge
+
+# 自分が出した PR に自動マージを予約する。
+# 実際のマージは GitHub が required status checks の成功を待って行う。
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  enable-auto-merge:
+    name: enable auto merge
+    # fork からの PR と、リポジトリ所有者以外が出した PR は対象にしない。
+    # 外部の変更が人の目を通さず本番へ出るのを防ぐ。
+    if: >-
+      github.event.pull_request.draft == false &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.user.login == github.repository_owner
+    runs-on: ubuntu-latest
+    steps:
+      - name: Enable auto merge
+        run: gh pr merge --auto --squash "$PR_URL"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
