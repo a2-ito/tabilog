@@ -53,24 +53,27 @@ export function EntryForm({ trip, entry }: { trip: Trip; entry?: EntryWithMeta }
 			<div className="grid gap-4 sm:grid-cols-2">
 				<Field label="いくら？" hint="空欄でも保存できます">
 					<div className="flex gap-2">
+						{/* inputClass の w-full と衝突しないよう、幅の指定は外側の要素に持たせる */}
 						<input
 							name="amount"
 							inputMode="decimal"
 							defaultValue={entry?.amountMinor != null ? minorToInput(entry.amountMinor, entryCurrency) : ""}
-							className={inputClass}
+							className={`${inputClass} min-w-0 flex-1`}
 							placeholder="200"
 						/>
 						{canChooseCurrency ? (
-							<select
-								name="amountCurrency"
-								value={inputCurrency}
-								onChange={(e) => setInputCurrency(e.target.value)}
-								aria-label="金額の通貨"
-								className={`${inputClass} w-32 shrink-0`}
-							>
-								<option value="local">{trip.currency}</option>
-								<option value="JPY">JPY</option>
-							</select>
+							<div className="w-28 shrink-0">
+								<select
+									name="amountCurrency"
+									value={inputCurrency}
+									onChange={(e) => setInputCurrency(e.target.value)}
+									aria-label="金額の通貨"
+									className={inputClass}
+								>
+									<option value="local">{trip.currency}</option>
+									<option value="JPY">JPY</option>
+								</select>
+							</div>
 						) : (
 							<input type="hidden" name="amountCurrency" value="local" />
 						)}
