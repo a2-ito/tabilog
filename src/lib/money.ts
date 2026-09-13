@@ -100,3 +100,39 @@ export function needsJpyConversion(code: string): boolean {
 export function sumMinor(amounts: readonly number[]): number {
 	return amounts.reduce((acc, n) => acc + n, 0);
 }
+
+/* ── 通貨が混ざった記録の集計 ─────────────────────────────── */
+
+/** 金額と、それを支払った通貨の組 */
+export type Amount = { minor: number; currency: string };
+
+/** 現地通貨を円に、円はそのまま。合計は円で持つのが一番ずれない */
+export function amountToJpy(amount: Amount, tripCurrency: string, rateToJpy: number): number {
+	const currency = normalizeCurrency(amount.currency);
+	if (currency === "JPY") return amount.minor;
+	// 旅行の通貨であればそのレートで、想定外の通貨なら換算できないので円換算はしない
+	if (currency === normalizeCurrency(tripCurrency)) return toJpy(amount.minor, currency, rateToJpy);
+	return 0;
+}
+
+export function sumAsJpy(amounts: readonly Amount[], tripCurrency: string, rateToJpy: number): number {
+	return amounts.reduce((acc, a) => acc + amountToJpy(a, tripCurrency, rateToJpy), 0);
+}
+
+/** 円を現地通貨の最小単位に直す（合計を現地通貨で見せるため） */
+export function jpyToLocalMinor(yen: number, currency: string, rateToJpy: number): number {
+	const code = normalizeCurrency(currency);
+	if (code === "JPY") return yen;
+	if (rateToJpy <= 0) return 0;
+	return Math.round((yen / rateToJpy) * 10 ** currencyDigits(code));
+}
+
+/** 通貨ごとに合計する。表示順は渡された順のまま */
+export function sumByCurrency(amounts: readonly Amount[]): { currency: string; minor: number }[] {
+	const totals = new Map<string, number>();
+	for (const a of amounts) {
+		const code = normalizeCurrency(a.currency);
+		totals.set(code, (totals.get(code) ?? 0) + a.minor);
+	}
+	return [...totals.entries()].map(([currency, minor]) => ({ currency, minor }));
+}

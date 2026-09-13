@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+	amountToJpy,
 	currencyDigits,
+	jpyToLocalMinor,
+	sumAsJpy,
+	sumByCurrency,
 	formatMoney,
 	minorToInput,
 	needsJpyConversion,
@@ -100,5 +104,61 @@ describe("sumMinor", () => {
 	it("合計する", () => {
 		expect(sumMinor([100, 200, 300])).toBe(600);
 		expect(sumMinor([])).toBe(0);
+	});
+});
+
+describe("amountToJpy", () => {
+	it("現地通貨はレートで円にする", () => {
+		expect(amountToJpy({ minor: 20000, currency: "TWD" }, "TWD", 4.7)).toBe(940);
+	});
+	it("円はそのまま", () => {
+		expect(amountToJpy({ minor: 1200, currency: "JPY" }, "TWD", 4.7)).toBe(1200);
+	});
+	it("旅行に関係ない通貨は換算しない", () => {
+		expect(amountToJpy({ minor: 1000, currency: "EUR" }, "TWD", 4.7)).toBe(0);
+	});
+});
+
+describe("sumAsJpy", () => {
+	it("現地通貨と円が混ざっていても合計できる", () => {
+		const total = sumAsJpy(
+			[
+				{ minor: 20000, currency: "TWD" }, // 200 TWD = 940 円
+				{ minor: 1200, currency: "JPY" },
+			],
+			"TWD",
+			4.7,
+		);
+		expect(total).toBe(2140);
+	});
+	it("空なら 0", () => {
+		expect(sumAsJpy([], "TWD", 4.7)).toBe(0);
+	});
+});
+
+describe("jpyToLocalMinor", () => {
+	it("円を現地通貨の最小単位に直す", () => {
+		expect(jpyToLocalMinor(940, "TWD", 4.7)).toBe(20000);
+	});
+	it("円どうしならそのまま", () => {
+		expect(jpyToLocalMinor(1200, "JPY", 1)).toBe(1200);
+	});
+	it("レートが 0 以下なら 0（0 除算を避ける）", () => {
+		expect(jpyToLocalMinor(940, "TWD", 0)).toBe(0);
+	});
+});
+
+describe("sumByCurrency", () => {
+	it("通貨ごとにまとめる", () => {
+		expect(
+			sumByCurrency([
+				{ minor: 100, currency: "TWD" },
+				{ minor: 1200, currency: "JPY" },
+				{ minor: 50, currency: "twd" },
+			]),
+		).toEqual([
+			{ currency: "TWD", minor: 150 },
+			{ currency: "JPY", minor: 1200 },
+		]);
 	});
 });

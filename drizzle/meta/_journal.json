@@ -8,6 +8,13 @@
       "when": 1789298177212,
       "tag": "0000_smooth_hulk",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1789304237504,
+      "tag": "0001_remarkable_rocket_raccoon",
+      "breakpoints": true
     }
   ]
 }

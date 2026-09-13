@@ -1,4 +1,5 @@
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { sumAsJpy } from "@/lib/money";
 import { createTestEnv, type TestEnv } from "@/test/d1";
 import {
 	addPhotos,
@@ -78,7 +79,52 @@ describe("trips", () => {
 
 		const [summary] = await listTrips(env.db);
 		expect(summary.entryCount).toBe(3);
-		expect(summary.totalMinor).toBe(65000);
+		// 金額のある 2 件だけが合計の対象になる
+		expect(summary.amounts).toEqual([
+			{ minor: 20000, currency: "TWD" },
+			{ minor: 45000, currency: "TWD" },
+		]);
+	});
+
+	it("一覧の金額は記録ごとの通貨を保つ", async () => {
+		const user = await seedUser();
+		const trip = await createTrip(env.db, tripInput, user.id);
+		await createEntry(
+			env.db,
+			trip.id,
+			{ kind: "food", title: "小籠包", amountMinor: 20000, amountCurrency: "TWD", happenedAt: "2026-03-01T12:00:00Z" },
+			user.id,
+		);
+		// 日本で先に払った分は円のまま残る
+		await createEntry(
+			env.db,
+			trip.id,
+			{ kind: "other", title: "航空券", amountMinor: 48000, amountCurrency: "JPY", happenedAt: "2026-02-01T12:00:00Z" },
+			user.id,
+		);
+
+		const [summary] = await listTrips(env.db);
+		expect(summary.amounts).toEqual(
+			expect.arrayContaining([
+				{ minor: 20000, currency: "TWD" },
+				{ minor: 48000, currency: "JPY" },
+			]),
+		);
+		// 200 TWD = 940 円 + 48,000 円
+		expect(sumAsJpy(summary.amounts, summary.currency, summary.rateToJpy)).toBe(48940);
+	});
+
+	it("通貨が未設定の古い記録は旅行の通貨として扱う", async () => {
+		const user = await seedUser();
+		const trip = await createTrip(env.db, tripInput, user.id);
+		await createEntry(
+			env.db,
+			trip.id,
+			{ kind: "food", title: "移行前の記録", amountMinor: 10000, happenedAt: "2026-03-01T12:00:00Z" },
+			user.id,
+		);
+		const [summary] = await listTrips(env.db);
+		expect(summary.amounts).toEqual([{ minor: 10000, currency: "TWD" }]);
 	});
 
 	it("記録が無い旅行も一覧に出る", async () => {
@@ -86,7 +132,7 @@ describe("trips", () => {
 		await createTrip(env.db, tripInput, user.id);
 		const [summary] = await listTrips(env.db);
 		expect(summary.entryCount).toBe(0);
-		expect(summary.totalMinor).toBe(0);
+		expect(summary.amounts).toEqual([]);
 	});
 
 	it("開始日の新しい順に並ぶ", async () => {

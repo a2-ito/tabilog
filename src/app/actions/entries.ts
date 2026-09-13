@@ -30,6 +30,8 @@ const entrySchema = z.object({
 	place: optionalText(200),
 	/** 通貨ごとの桁数が要るので、ここでは文字列のまま受けて後段で最小単位に直す */
 	amount: optionalText(30),
+	/** 金額をどの通貨で入力したか。local = 旅行の通貨 */
+	amountCurrency: z.enum(["local", "JPY"]).default("local"),
 	/** 0 は「未評価」 */
 	rating: z.coerce.number().int().min(0).max(5).default(0),
 	note: optionalText(2000),
@@ -40,7 +42,7 @@ export async function saveEntry(_prev: ActionState, formData: FormData): Promise
 	const user = await requireUser();
 	const parsed = parseForm(entrySchema, formData);
 	if (!parsed.ok) return { error: parsed.error };
-	const { id, tripId, amount, rating, happenedAt, ...rest } = parsed.data;
+	const { id, tripId, amount, amountCurrency, rating, happenedAt, ...rest } = parsed.data;
 
 	const wallClock = toWallClock(happenedAt);
 	if (!wallClock) return { error: "日時の形式が不正です" };
@@ -49,9 +51,11 @@ export async function saveEntry(_prev: ActionState, formData: FormData): Promise
 	const trip = await getTrip(db, tripId);
 	if (!trip) return { error: "旅行が見つかりません" };
 
+	// 現地で払ったか日本円で払ったかは記録ごとに変わるので、入力通貨も一緒に残す
+	const currency = amountCurrency === "JPY" ? "JPY" : trip.currency;
 	let amountMinor: number | undefined;
 	if (amount !== undefined) {
-		const minor = parseAmountToMinor(amount, trip.currency);
+		const minor = parseAmountToMinor(amount, currency);
 		if (minor === null) return { error: "金額は 0 以上の数値で入力してください" };
 		amountMinor = minor;
 	}
@@ -59,6 +63,7 @@ export async function saveEntry(_prev: ActionState, formData: FormData): Promise
 	const input = {
 		...rest,
 		amountMinor,
+		amountCurrency: amountMinor === undefined ? undefined : currency,
 		rating: rating === 0 ? undefined : rating,
 		happenedAt: wallClock,
 	};

@@ -57,10 +57,39 @@ describe("saveEntry", () => {
 
 	it("金額は旅行の通貨の最小単位で保存する", async () => {
 		await expectRedirect(() => saveEntry({}, formData({ ...valid, amount: "12.34" })));
-		expect((await getEntry(t.db, 1))?.amountMinor).toBe(1234);
+		expect(await getEntry(t.db, 1)).toMatchObject({ amountMinor: 1234, amountCurrency: "TWD" });
 
 		await expectRedirect(() => saveEntry({}, formData({ ...valid, tripId: 2, amount: "1200" })));
-		expect((await getEntry(t.db, 2))?.amountMinor).toBe(1200);
+		expect(await getEntry(t.db, 2)).toMatchObject({ amountMinor: 1200, amountCurrency: "JPY" });
+	});
+
+	it("日本円を選ぶと円のまま保存する", async () => {
+		await expectRedirect(() => saveEntry({}, formData({ ...valid, amount: "48000", amountCurrency: "JPY" })));
+		expect(await getEntry(t.db, 1)).toMatchObject({ amountMinor: 48000, amountCurrency: "JPY" });
+	});
+
+	it("日本円を選ぶと円の桁数（小数なし）で解釈する", async () => {
+		// TWD なら 100.60 -> 10060 だが、円なら 101
+		await expectRedirect(() => saveEntry({}, formData({ ...valid, amount: "100.6", amountCurrency: "JPY" })));
+		expect((await getEntry(t.db, 1))?.amountMinor).toBe(101);
+	});
+
+	it("通貨を指定しなければ旅行の通貨で入力したものとして扱う", async () => {
+		await expectRedirect(() => saveEntry({}, formData({ ...valid, amount: "200" })));
+		expect((await getEntry(t.db, 1))?.amountCurrency).toBe("TWD");
+	});
+
+	it("金額が空なら通貨も残さない", async () => {
+		await expectRedirect(() => saveEntry({}, formData({ ...valid, amountCurrency: "JPY" })));
+		expect(await getEntry(t.db, 1)).toMatchObject({ amountMinor: null, amountCurrency: null });
+	});
+
+	it("円で入れた記録を現地通貨に入れ直せる", async () => {
+		await expectRedirect(() => saveEntry({}, formData({ ...valid, amount: "48000", amountCurrency: "JPY" })));
+		await expectRedirect(() =>
+			saveEntry({}, formData({ ...valid, id: 1, amount: "200", amountCurrency: "local" })),
+		);
+		expect(await getEntry(t.db, 1)).toMatchObject({ amountMinor: 20000, amountCurrency: "TWD" });
 	});
 
 	it("金額と評価は省略できる", async () => {
@@ -112,6 +141,7 @@ describe("saveEntry", () => {
 		["存在しない日時", { happenedAt: "2026-02-30T12:00" }, /日時の形式/],
 		["金額が数値でない", { amount: "たかい" }, /金額/],
 		["評価が範囲外", { rating: 9 }, /rating/],
+		["通貨の指定が不正", { amount: "100", amountCurrency: "USD" }, /amountCurrency/],
 	])("%s なら保存せずエラーを返す", async (_name, override, pattern) => {
 		const state = await saveEntry({}, formData({ ...valid, ...override }));
 		expect(state.error).toMatch(pattern);

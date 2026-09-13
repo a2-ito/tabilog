@@ -1,12 +1,12 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { saveEntry } from "@/app/actions/entries";
 import type { EntryWithMeta } from "@/db/queries";
 import type { Trip } from "@/db/schema";
 import { nowWallClock } from "@/lib/datetime";
 import { initialActionState } from "@/lib/form";
-import { minorToInput } from "@/lib/money";
+import { minorToInput, needsJpyConversion, normalizeCurrency } from "@/lib/money";
 import { PhotoInput } from "./photo-input";
 import { Field, FormMessage, inputClass, SubmitButton } from "./ui";
 
@@ -18,6 +18,13 @@ const KIND_LABELS = [
 
 export function EntryForm({ trip, entry }: { trip: Trip; entry?: EntryWithMeta }) {
 	const [state, formAction] = useActionState(saveEntry, initialActionState);
+	// 現地で払うとは限らない（日本で先に払った宿代など）ので、入力通貨を選べるようにする
+	const entryCurrency = entry?.amountCurrency ?? trip.currency;
+	const [inputCurrency, setInputCurrency] = useState(
+		normalizeCurrency(entryCurrency) === "JPY" ? "JPY" : "local",
+	);
+	// 旅行そのものが円建てなら選ぶ意味がない
+	const canChooseCurrency = needsJpyConversion(trip.currency);
 
 	return (
 		<form action={formAction} className="space-y-4">
@@ -44,14 +51,30 @@ export function EntryForm({ trip, entry }: { trip: Trip; entry?: EntryWithMeta }
 			</Field>
 
 			<div className="grid gap-4 sm:grid-cols-2">
-				<Field label={`いくら？（${trip.currency}）`} hint="空欄でも保存できます">
-					<input
-						name="amount"
-						inputMode="decimal"
-						defaultValue={entry?.amountMinor != null ? minorToInput(entry.amountMinor, trip.currency) : ""}
-						className={inputClass}
-						placeholder="200"
-					/>
+				<Field label="いくら？" hint="空欄でも保存できます">
+					<div className="flex gap-2">
+						<input
+							name="amount"
+							inputMode="decimal"
+							defaultValue={entry?.amountMinor != null ? minorToInput(entry.amountMinor, entryCurrency) : ""}
+							className={inputClass}
+							placeholder="200"
+						/>
+						{canChooseCurrency ? (
+							<select
+								name="amountCurrency"
+								value={inputCurrency}
+								onChange={(e) => setInputCurrency(e.target.value)}
+								aria-label="金額の通貨"
+								className={`${inputClass} w-32 shrink-0`}
+							>
+								<option value="local">{trip.currency}</option>
+								<option value="JPY">JPY</option>
+							</select>
+						) : (
+							<input type="hidden" name="amountCurrency" value="local" />
+						)}
+					</div>
 				</Field>
 				<Field label="日時">
 					<input
