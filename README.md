@@ -77,6 +77,24 @@ Google OAuth の承認済みリダイレクト URI には以下を登録しま�
 
 ## デプロイ
 
+main への push を Cloudflare の [Workers Builds](https://developers.cloudflare.com/workers/ci-cd/builds/)
+が検知し、ビルドしてデプロイする。GitHub 側にデプロイ用の認証情報は置かない。
+設定は Cloudflare ダッシュボードの **Settings > Build** で行う。
+
+| 項目 | 値 |
+| --- | --- |
+| Build command | `npm run cf:build` |
+| Deploy command | `npm run cf:deploy` |
+| Git branch | `main` |
+| Build variables | `D1_DATABASE_ID`, `APP_HOSTNAME` |
+
+`wrangler.jsonc` は追跡していないため、`npm run cf:config` が雛形のプレースホルダを
+これらの変数で埋めて生成する。手元に `wrangler.jsonc` がある場合は上書きしない。
+
+スキーマ変更は自動適用しない。`npm run db:migrate:remote` を手で流してからマージする。
+
+### 手元からデプロイする場合
+
 ```bash
 # 初回のみ: リソース作成
 npx wrangler d1 create tabilog-db
