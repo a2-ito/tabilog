@@ -10,6 +10,12 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# wrangler.jsonc と cloudflare-env.d.ts は実 ID や生成物なので追跡していない。
+# CI では雛形に仮の値を入れて生成してから検証する。
+env:
+  D1_DATABASE_ID: placeholder-database-id
+  APP_HOSTNAME: placeholder.example.com
+
 jobs:
   quality:
     name: quality
@@ -22,6 +28,8 @@ jobs:
           cache: npm
       # Cloudflare Workers Builds も npm ci を使うため、ここでも ci で検証する
       - run: npm ci --no-audit --no-fund
+      - name: Generate Cloudflare bindings types
+        run: npm run cf:config && npm run cf-typegen
       - run: npm run lint
       - run: npm run typecheck
       - run: npm test
@@ -35,12 +43,8 @@ jobs:
         with:
           node-version: 24
           cache: npm
-      # Cloudflare Workers Builds も npm ci を使うため、ここでも ci で検証する
       - run: npm ci --no-audit --no-fund
-      # wrangler.jsonc は実 ID と公開ホスト名を含むため追跡していない。
-      # ビルドの成否確認が目的なので、雛形に仮の値を入れて生成する。
+      - name: Generate Cloudflare bindings types
+        run: npm run cf:config && npm run cf-typegen
       - name: Build
-        env:
-          D1_DATABASE_ID: placeholder-database-id
-          APP_HOSTNAME: placeholder.example.com
         run: npm run cf:build
