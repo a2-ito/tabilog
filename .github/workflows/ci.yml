@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# 同じブランチで新しい実行が始まったら、古い実行は打ち切る
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: quality
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      # Cloudflare Workers Builds も npm ci を使うため、ここでも ci で検証する
+      - run: npm ci --no-audit --no-fund
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+
+  build:
+    name: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      # Cloudflare Workers Builds も npm ci を使うため、ここでも ci で検証する
+      - run: npm ci --no-audit --no-fund
+      # wrangler.jsonc は実 ID と公開ホスト名を含むため追跡していない。
+      # ビルドの成否確認が目的なので、雛形に仮の値を入れて生成する。
+      - name: Build
+        env:
+          D1_DATABASE_ID: placeholder-database-id
+          APP_HOSTNAME: placeholder.example.com
+        run: npm run cf:build

@@ -1,0 +1,166 @@
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { createTrip, getEntry, listEntries, upsertUser } from "@/db/queries";
+import { expectRedirect, revalidated } from "@/test/action-mocks";
+import { createTestEnv, fakeImage, formData, type TestEnv } from "@/test/d1";
+
+let t: TestEnv;
+vi.mock("@/lib/auth", async () => ({ requireUser: async () => (await import("@/test/action-mocks")).fakeUser }));
+vi.mock("@/lib/cloudflare", () => ({ getEnv: () => Promise.resolve(t.env) }));
+vi.mock("next/cache", async () => {
+	const { revalidated } = await import("@/test/action-mocks");
+	return { revalidatePath: (p: string) => void revalidated.push(p) };
+});
+vi.mock("next/navigation", async () => {
+	const { RedirectSignal } = await import("@/test/action-mocks");
+	return {
+		redirect: (to: string) => {
+			throw new RedirectSignal(to);
+		},
+	};
+});
+const { deleteEntryAction, deletePhotoAction, saveEntry } = await import("./entries");
+
+beforeAll(async () => {
+	t = await createTestEnv();
+});
+afterAll(() => t.dispose());
+beforeEach(async () => {
+	await t.truncate();
+	const user = await upsertUser(t.db, { email: "tester@example.com", name: "Tester", image: null });
+	// 通貨が 2 桁の旅行（TWD）と 0 桁の旅行（JPY）を用意する
+	await createTrip(t.db, { name: "台湾旅行", currency: "TWD", rateToJpy: 4.7 }, user.id);
+	await createTrip(t.db, { name: "国内旅行", currency: "JPY", rateToJpy: 1 }, user.id);
+	revalidated.length = 0;
+});
+
+const valid = { tripId: 1, kind: "food", title: "小籠包", happenedAt: "2026-03-01T12:30" };
+
+describe("saveEntry", () => {
+	it("記録して詳細ページへ遷移する", async () => {
+		const to = await expectRedirect(() =>
+			saveEntry({}, formData({ ...valid, place: "鼎泰豐", amount: "200", rating: 5, note: "熱々" })),
+		);
+		expect(to).toBe("/trips/1/entries/1");
+
+		const entry = await getEntry(t.db, 1);
+		expect(entry).toMatchObject({
+			title: "小籠包",
+			place: "鼎泰豐",
+			amountMinor: 20000,
+			rating: 5,
+			note: "熱々",
+			happenedAt: "2026-03-01T12:30",
+			authorId: 1,
+		});
+		expect(revalidated).toEqual(expect.arrayContaining(["/trips/1", "/trips/1/entries/1"]));
+	});
+
+	it("金額は旅行の通貨の最小単位で保存する", async () => {
+		await expectRedirect(() => saveEntry({}, formData({ ...valid, amount: "12.34" })));
+		expect((await getEntry(t.db, 1))?.amountMinor).toBe(1234);
+
+		await expectRedirect(() => saveEntry({}, formData({ ...valid, tripId: 2, amount: "1200" })));
+		expect((await getEntry(t.db, 2))?.amountMinor).toBe(1200);
+	});
+
+	it("金額と評価は省略できる", async () => {
+		await expectRedirect(() => saveEntry({}, formData(valid)));
+		const entry = await getEntry(t.db, 1);
+		expect(entry?.amountMinor).toBeNull();
+		expect(entry?.rating).toBeNull();
+	});
+
+	it("写真を R2 に保存して紐づける", async () => {
+		const fd = formData(valid);
+		fd.append("photos", fakeImage("image/jpeg", 2048, "a.jpg"));
+		fd.append("photos", fakeImage("image/png", 2048, "b.png"));
+		await expectRedirect(() => saveEntry({}, fd));
+
+		const entry = await getEntry(t.db, 1);
+		expect(entry?.photos).toHaveLength(2);
+		expect(entry?.photos[0].key).toMatch(/^trips\/1\//);
+		expect(await t.bucket.get(entry!.photos[0].key)).not.toBeNull();
+	});
+
+	it("対応していない形式の写真は保存しない", async () => {
+		const fd = formData(valid);
+		fd.append("photos", new File([new Uint8Array(10)], "a.pdf", { type: "application/pdf" }));
+		const state = await saveEntry({}, fd);
+		expect(state.error).toMatch(/対応していない/);
+	});
+
+	it("既存の記録を更新し、写真は追記される", async () => {
+		const first = formData(valid);
+		first.append("photos", fakeImage("image/jpeg", 2048, "a.jpg"));
+		await expectRedirect(() => saveEntry({}, first));
+
+		const second = formData({ ...valid, id: 1, title: "小籠包（2 回目）", rating: 4 });
+		second.append("photos", fakeImage("image/jpeg", 2048, "b.jpg"));
+		await expectRedirect(() => saveEntry({}, second));
+
+		const entry = await getEntry(t.db, 1);
+		expect(entry?.title).toBe("小籠包（2 回目）");
+		expect(entry?.rating).toBe(4);
+		expect(entry?.photos).toHaveLength(2);
+		expect(await listEntries(t.db, 1)).toHaveLength(1);
+	});
+
+	it.each([
+		["タイトルが空", { title: "" }, /入力してください/],
+		["種別が不正", { kind: "drink" }, /kind/],
+		["日時の形式が不正", { happenedAt: "2026-03-01" }, /日時の形式/],
+		["存在しない日時", { happenedAt: "2026-02-30T12:00" }, /日時の形式/],
+		["金額が数値でない", { amount: "たかい" }, /金額/],
+		["評価が範囲外", { rating: 9 }, /rating/],
+	])("%s なら保存せずエラーを返す", async (_name, override, pattern) => {
+		const state = await saveEntry({}, formData({ ...valid, ...override }));
+		expect(state.error).toMatch(pattern);
+		expect(await listEntries(t.db, 1)).toHaveLength(0);
+	});
+
+	it("存在しない旅行にはぶら下げられない", async () => {
+		const state = await saveEntry({}, formData({ ...valid, tripId: 999 }));
+		expect(state.error).toMatch(/旅行が見つかりません/);
+	});
+
+	it("別の旅行の記録 ID を渡しても更新できない", async () => {
+		await expectRedirect(() => saveEntry({}, formData(valid)));
+		const state = await saveEntry({}, formData({ ...valid, tripId: 2, id: 1 }));
+		expect(state.error).toMatch(/記録が見つかりません/);
+	});
+});
+
+describe("deleteEntryAction", () => {
+	it("記録と写真の実体を消して旅行ページへ戻る", async () => {
+		const fd = formData(valid);
+		fd.append("photos", fakeImage("image/jpeg", 2048, "a.jpg"));
+		await expectRedirect(() => saveEntry({}, fd));
+		const key = (await getEntry(t.db, 1))!.photos[0].key;
+
+		const to = await expectRedirect(() => deleteEntryAction(formData({ id: 1, tripId: 1 })));
+		expect(to).toBe("/trips/1");
+		expect(await getEntry(t.db, 1)).toBeNull();
+		expect(await t.bucket.get(key)).toBeNull();
+	});
+});
+
+describe("deletePhotoAction", () => {
+	it("写真だけを消す", async () => {
+		const fd = formData(valid);
+		fd.append("photos", fakeImage("image/jpeg", 2048, "a.jpg"));
+		fd.append("photos", fakeImage("image/jpeg", 2048, "b.jpg"));
+		await expectRedirect(() => saveEntry({}, fd));
+
+		const before = await getEntry(t.db, 1);
+		const removed = before!.photos[0];
+		await deletePhotoAction(formData({ id: removed.id }));
+
+		const after = await getEntry(t.db, 1);
+		expect(after?.photos.map((p) => p.id)).toEqual([before!.photos[1].id]);
+		expect(await t.bucket.get(removed.key)).toBeNull();
+	});
+
+	it("存在しない写真 ID は無視する", async () => {
+		await expect(deletePhotoAction(formData({ id: 999 }))).resolves.toBeUndefined();
+	});
+});

@@ -1,0 +1,123 @@
+"use server";
+
+import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
+import { z } from "zod";
+import { getDb } from "@/db";
+import {
+	addPhotos,
+	createEntry,
+	deleteEntry,
+	deletePhoto,
+	getEntry,
+	getPhoto,
+	getTrip,
+	listEntryPhotoKeys,
+	updateEntry,
+} from "@/db/queries";
+import { ENTRY_KINDS } from "@/db/schema";
+import { requireUser } from "@/lib/auth";
+import { toWallClock } from "@/lib/datetime";
+import { type ActionState, idFromForm, optionalIdFromForm, optionalText, parseForm } from "@/lib/form";
+import { parseAmountToMinor } from "@/lib/money";
+import { deletePhotos, storePhotos } from "@/lib/photos";
+
+const entrySchema = z.object({
+	id: optionalIdFromForm,
+	tripId: idFromForm,
+	kind: z.enum(ENTRY_KINDS),
+	title: z.string().trim().min(1, "何を食べた・買ったかを入力してください").max(200, "タイトルが長すぎます"),
+	place: optionalText(200),
+	/** 通貨ごとの桁数が要るので、ここでは文字列のまま受けて後段で最小単位に直す */
+	amount: optionalText(30),
+	/** 0 は「未評価」 */
+	rating: z.coerce.number().int().min(0).max(5).default(0),
+	note: optionalText(2000),
+	happenedAt: z.string().trim().min(1, "日時を入力してください"),
+});
+
+export async function saveEntry(_prev: ActionState, formData: FormData): Promise<ActionState> {
+	const user = await requireUser();
+	const parsed = parseForm(entrySchema, formData);
+	if (!parsed.ok) return { error: parsed.error };
+	const { id, tripId, amount, rating, happenedAt, ...rest } = parsed.data;
+
+	const wallClock = toWallClock(happenedAt);
+	if (!wallClock) return { error: "日時の形式が不正です" };
+
+	const db = await getDb();
+	const trip = await getTrip(db, tripId);
+	if (!trip) return { error: "旅行が見つかりません" };
+
+	let amountMinor: number | undefined;
+	if (amount !== undefined) {
+		const minor = parseAmountToMinor(amount, trip.currency);
+		if (minor === null) return { error: "金額は 0 以上の数値で入力してください" };
+		amountMinor = minor;
+	}
+
+	const input = {
+		...rest,
+		amountMinor,
+		rating: rating === 0 ? undefined : rating,
+		happenedAt: wallClock,
+	};
+
+	// FormData から直接取るのは、複数ファイルが Zod のスキーマに乗らないため
+	const files = formData.getAll("photos").filter((f): f is File => f instanceof File);
+
+	let entryId = id;
+	try {
+		if (entryId) {
+			const existing = await getEntry(db, entryId);
+			if (!existing || existing.tripId !== tripId) return { error: "記録が見つかりません" };
+			await updateEntry(db, entryId, input);
+		} else {
+			const created = await createEntry(db, tripId, input, user.id);
+			entryId = created.id;
+		}
+		const stored = await storePhotos(files, tripId);
+		if (stored.length > 0) await addPhotos(db, entryId, stored);
+	} catch (e) {
+		return { error: e instanceof Error ? e.message : "保存に失敗しました" };
+	}
+
+	revalidatePath("/");
+	revalidatePath(`/trips/${tripId}`);
+	revalidatePath(`/trips/${tripId}/entries/${entryId}`);
+	redirect(`/trips/${tripId}/entries/${entryId}`);
+}
+
+export async function deleteEntryAction(formData: FormData): Promise<void> {
+	await requireUser();
+	const id = idFromForm.safeParse(formData.get("id"));
+	const tripId = idFromForm.safeParse(formData.get("tripId"));
+	if (!id.success || !tripId.success) throw new Error("ID が不正です");
+
+	const db = await getDb();
+	const keys = await listEntryPhotoKeys(db, id.data);
+	await deleteEntry(db, id.data);
+	await deletePhotos(keys);
+
+	revalidatePath("/");
+	revalidatePath(`/trips/${tripId.data}`);
+	redirect(`/trips/${tripId.data}`);
+}
+
+export async function deletePhotoAction(formData: FormData): Promise<void> {
+	await requireUser();
+	const id = idFromForm.safeParse(formData.get("id"));
+	if (!id.success) throw new Error("写真 ID が不正です");
+
+	const db = await getDb();
+	const photo = await getPhoto(db, id.data);
+	if (!photo) return;
+	await deletePhoto(db, photo.id);
+	await deletePhotos([photo.key]);
+
+	const entry = await getEntry(db, photo.entryId);
+	if (entry) {
+		revalidatePath(`/trips/${entry.tripId}`);
+		revalidatePath(`/trips/${entry.tripId}/entries/${entry.id}`);
+	}
+}

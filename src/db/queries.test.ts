@@ -1,0 +1,242 @@
+import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { createTestEnv, type TestEnv } from "@/test/d1";
+import {
+	addPhotos,
+	createComment,
+	createEntry,
+	createTrip,
+	deleteComment,
+	deleteEntry,
+	deleteTrip,
+	getEntry,
+	getTrip,
+	listComments,
+	listEntries,
+	listTripPhotoKeys,
+	listTrips,
+	updateEntry,
+	updateTrip,
+	upsertUser,
+} from "./queries";
+
+let env: TestEnv;
+
+const seedUser = (suffix = "") =>
+	upsertUser(env.db, { email: `taro${suffix}@example.com`, name: `太郎${suffix}`, image: null });
+
+const tripInput = { name: "台湾旅行", currency: "TWD", rateToJpy: 4.7 };
+
+afterAll(async () => env?.dispose());
+beforeEach(async () => {
+	env ??= await createTestEnv();
+	await env.truncate();
+});
+
+describe("upsertUser", () => {
+	it("初回は作成し、2 回目は同じ行を更新する", async () => {
+		const first = await upsertUser(env.db, { email: "Taro@Example.com", name: "太郎", image: null });
+		const second = await upsertUser(env.db, { email: "taro@example.com", name: "太郎（改）", image: "img" });
+		expect(second.id).toBe(first.id);
+		expect(second.name).toBe("太郎（改）");
+		expect(second.image).toBe("img");
+	});
+
+	it("メールは小文字で保存される", async () => {
+		const user = await upsertUser(env.db, { email: " TARO@Example.com ", name: null, image: null });
+		expect(user.email).toBe("taro@example.com");
+	});
+});
+
+describe("trips", () => {
+	it("作成した旅行を取得できる", async () => {
+		const user = await seedUser();
+		const trip = await createTrip(env.db, { ...tripInput, startDate: "2026-03-01", note: "初 台北" }, user.id);
+		const found = await getTrip(env.db, trip.id);
+		expect(found?.name).toBe("台湾旅行");
+		expect(found?.currency).toBe("TWD");
+		expect(found?.rateToJpy).toBeCloseTo(4.7);
+		expect(found?.createdBy).toBe(user.id);
+	});
+
+	it("一覧は記録数と合計金額を返す", async () => {
+		const user = await seedUser();
+		const trip = await createTrip(env.db, tripInput, user.id);
+		await createEntry(
+			env.db,
+			trip.id,
+			{ kind: "food", title: "小籠包", amountMinor: 20000, happenedAt: "2026-03-01T12:00:00Z" },
+			user.id,
+		);
+		await createEntry(
+			env.db,
+			trip.id,
+			{ kind: "shopping", title: "パイナップルケーキ", amountMinor: 45000, happenedAt: "2026-03-01T15:00:00Z" },
+			user.id,
+		);
+		// 金額なしの記録は合計に影響しない
+		await createEntry(env.db, trip.id, { kind: "other", title: "MRT", happenedAt: "2026-03-01T09:00:00Z" }, user.id);
+
+		const [summary] = await listTrips(env.db);
+		expect(summary.entryCount).toBe(3);
+		expect(summary.totalMinor).toBe(65000);
+	});
+
+	it("記録が無い旅行も一覧に出る", async () => {
+		const user = await seedUser();
+		await createTrip(env.db, tripInput, user.id);
+		const [summary] = await listTrips(env.db);
+		expect(summary.entryCount).toBe(0);
+		expect(summary.totalMinor).toBe(0);
+	});
+
+	it("開始日の新しい順に並ぶ", async () => {
+		const user = await seedUser();
+		await createTrip(env.db, { ...tripInput, name: "古い旅", startDate: "2025-01-01" }, user.id);
+		await createTrip(env.db, { ...tripInput, name: "新しい旅", startDate: "2026-05-01" }, user.id);
+		expect((await listTrips(env.db)).map((t) => t.name)).toEqual(["新しい旅", "古い旅"]);
+	});
+
+	it("更新できる", async () => {
+		const user = await seedUser();
+		const trip = await createTrip(env.db, tripInput, user.id);
+		await updateTrip(env.db, trip.id, { name: "韓国旅行", currency: "KRW", rateToJpy: 0.11 });
+		const found = await getTrip(env.db, trip.id);
+		expect(found?.name).toBe("韓国旅行");
+		expect(found?.rateToJpy).toBeCloseTo(0.11);
+		expect(found?.startDate).toBeNull();
+	});
+
+	it("削除すると記録・写真・コメントも消える", async () => {
+		const user = await seedUser();
+		const trip = await createTrip(env.db, tripInput, user.id);
+		const entry = await createEntry(
+			env.db,
+			trip.id,
+			{ kind: "food", title: "牛肉麺", happenedAt: "2026-03-02T12:00:00Z" },
+			user.id,
+		);
+		await addPhotos(env.db, entry.id, [{ key: "photos/a.jpg", contentType: "image/jpeg" }]);
+		await createComment(env.db, { entryId: entry.id, body: "美味しそう" }, user.id);
+
+		expect(await listTripPhotoKeys(env.db, trip.id)).toEqual(["photos/a.jpg"]);
+
+		await deleteTrip(env.db, trip.id);
+		expect(await getTrip(env.db, trip.id)).toBeNull();
+		expect(await getEntry(env.db, entry.id)).toBeNull();
+		expect(await listComments(env.db, entry.id)).toEqual([]);
+	});
+});
+
+describe("entries", () => {
+	it("投稿者と写真とコメント数を一緒に返す", async () => {
+		const user = await seedUser();
+		const trip = await createTrip(env.db, tripInput, user.id);
+		const entry = await createEntry(
+			env.db,
+			trip.id,
+			{ kind: "food", title: "魯肉飯", place: "士林夜市", amountMinor: 8000, rating: 5, note: "最高", happenedAt: "2026-03-01T18:00:00Z" },
+			user.id,
+		);
+		await addPhotos(env.db, entry.id, [
+			{ key: "photos/a.jpg", contentType: "image/jpeg" },
+			{ key: "photos/b.jpg", contentType: "image/jpeg" },
+		]);
+		await createComment(env.db, { entryId: entry.id, body: "うまそう" }, user.id);
+
+		const found = await getEntry(env.db, entry.id);
+		expect(found?.title).toBe("魯肉飯");
+		expect(found?.rating).toBe(5);
+		expect(found?.author.name).toBe("太郎");
+		expect(found?.photos.map((p) => p.key)).toEqual(["photos/a.jpg", "photos/b.jpg"]);
+		expect(found?.commentCount).toBe(1);
+	});
+
+	it("写真を追加すると既存の並び順の後ろに付く", async () => {
+		const user = await seedUser();
+		const trip = await createTrip(env.db, tripInput, user.id);
+		const entry = await createEntry(env.db, trip.id, { kind: "food", title: "かき氷", happenedAt: "2026-03-01T14:00:00Z" }, user.id);
+		await addPhotos(env.db, entry.id, [{ key: "photos/1.jpg", contentType: "image/jpeg" }]);
+		await addPhotos(env.db, entry.id, [{ key: "photos/2.jpg", contentType: "image/jpeg" }]);
+		const found = await getEntry(env.db, entry.id);
+		expect(found?.photos.map((p) => [p.key, p.sortOrder])).toEqual([
+			["photos/1.jpg", 0],
+			["photos/2.jpg", 1],
+		]);
+	});
+
+	it("種別と評価で絞り込める", async () => {
+		const user = await seedUser();
+		const trip = await createTrip(env.db, tripInput, user.id);
+		await createEntry(env.db, trip.id, { kind: "food", title: "A", rating: 5, happenedAt: "2026-03-01T10:00:00Z" }, user.id);
+		await createEntry(env.db, trip.id, { kind: "food", title: "B", rating: 2, happenedAt: "2026-03-01T11:00:00Z" }, user.id);
+		await createEntry(env.db, trip.id, { kind: "shopping", title: "C", rating: 5, happenedAt: "2026-03-01T12:00:00Z" }, user.id);
+
+		expect((await listEntries(env.db, trip.id, { kind: "food" })).map((e) => e.title)).toEqual(["B", "A"]);
+		expect((await listEntries(env.db, trip.id, { minRating: 5 })).map((e) => e.title)).toEqual(["C", "A"]);
+		expect((await listEntries(env.db, trip.id, { kind: "food", minRating: 5 })).map((e) => e.title)).toEqual(["A"]);
+	});
+
+	it("新しい記録が先に並ぶ", async () => {
+		const user = await seedUser();
+		const trip = await createTrip(env.db, tripInput, user.id);
+		await createEntry(env.db, trip.id, { kind: "food", title: "朝", happenedAt: "2026-03-01T08:00:00Z" }, user.id);
+		await createEntry(env.db, trip.id, { kind: "food", title: "夜", happenedAt: "2026-03-01T20:00:00Z" }, user.id);
+		expect((await listEntries(env.db, trip.id)).map((e) => e.title)).toEqual(["夜", "朝"]);
+	});
+
+	it("更新しても投稿者は変わらない", async () => {
+		const user = await seedUser();
+		const other = await seedUser("2");
+		const trip = await createTrip(env.db, tripInput, user.id);
+		const entry = await createEntry(env.db, trip.id, { kind: "food", title: "豆花", happenedAt: "2026-03-01T16:00:00Z" }, other.id);
+		await updateEntry(env.db, entry.id, { kind: "shopping", title: "豆花（お土産）", happenedAt: "2026-03-01T16:00:00Z" });
+		const found = await getEntry(env.db, entry.id);
+		expect(found?.title).toBe("豆花（お土産）");
+		expect(found?.kind).toBe("shopping");
+		expect(found?.author.id).toBe(other.id);
+	});
+
+	it("削除できる", async () => {
+		const user = await seedUser();
+		const trip = await createTrip(env.db, tripInput, user.id);
+		const entry = await createEntry(env.db, trip.id, { kind: "food", title: "臭豆腐", happenedAt: "2026-03-01T19:00:00Z" }, user.id);
+		await deleteEntry(env.db, entry.id);
+		expect(await getEntry(env.db, entry.id)).toBeNull();
+	});
+});
+
+describe("comments", () => {
+	const seedEntry = async () => {
+		const user = await seedUser();
+		const trip = await createTrip(env.db, tripInput, user.id);
+		const entry = await createEntry(env.db, trip.id, { kind: "food", title: "マンゴー", happenedAt: "2026-03-01T13:00:00Z" }, user.id);
+		return { user, entry };
+	};
+
+	it("投稿者つきで古い順に返す", async () => {
+		const { user, entry } = await seedEntry();
+		await createComment(env.db, { entryId: entry.id, body: "1 つめ" }, user.id);
+		await createComment(env.db, { entryId: entry.id, body: "2 つめ" }, user.id);
+		const list = await listComments(env.db, entry.id);
+		expect(list.map((c) => c.body)).toEqual(["1 つめ", "2 つめ"]);
+		expect(list[0].author.email).toBe("taro@example.com");
+	});
+
+	it("返信は parentId を持つ", async () => {
+		const { user, entry } = await seedEntry();
+		const parent = await createComment(env.db, { entryId: entry.id, body: "親" }, user.id);
+		const reply = await createComment(env.db, { entryId: entry.id, parentId: parent.id, body: "返信" }, user.id);
+		expect(reply.parentId).toBe(parent.id);
+	});
+
+	it("親を消すと返信も消える", async () => {
+		const { user, entry } = await seedEntry();
+		const parent = await createComment(env.db, { entryId: entry.id, body: "親" }, user.id);
+		await createComment(env.db, { entryId: entry.id, parentId: parent.id, body: "返信" }, user.id);
+		const keep = await createComment(env.db, { entryId: entry.id, body: "別スレ" }, user.id);
+
+		await deleteComment(env.db, parent.id);
+		const rest = await listComments(env.db, entry.id);
+		expect(rest.map((c) => c.id)).toEqual([keep.id]);
+	});
+});

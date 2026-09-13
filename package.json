@@ -1,0 +1,47 @@
+{
+	"name": "tabilog",
+	"version": "0.1.0",
+	"private": true,
+	"scripts": {
+		"dev": "next dev",
+		"build": "next build",
+		"start": "next start",
+		"lint": "eslint .",
+		"preview": "npm run cf:config && opennextjs-cloudflare build && opennextjs-cloudflare preview",
+		"cf-typegen": "wrangler types --env-interface CloudflareEnv ./cloudflare-env.d.ts",
+		"typecheck": "next typegen && tsc --noEmit",
+		"db:generate": "drizzle-kit generate",
+		"db:migrate:local": "wrangler d1 migrations apply tabilog-db --local",
+		"db:migrate:remote": "wrangler d1 migrations apply tabilog-db --remote",
+		"test": "vitest run",
+		"test:watch": "vitest",
+		"cf:config": "node scripts/gen-wrangler-config.mjs",
+		"cf:build": "npm run cf:config && opennextjs-cloudflare build",
+		"cf:deploy": "npm run cf:config && opennextjs-cloudflare deploy"
+	},
+	"dependencies": {
+		"@opennextjs/cloudflare": "^1.20.3",
+		"drizzle-orm": "^0.45.2",
+		"next": "16.3.4",
+		"next-auth": "^5.0.0-beta.32",
+		"react": "^19.1.7",
+		"react-dom": "^19.1.7",
+		"zod": "^4.6.2"
+	},
+	"devDependencies": {
+		"@cloudflare/workers-types": "^5.20260911.1",
+		"@eslint/eslintrc": "^3",
+		"@tailwindcss/postcss": "^4",
+		"@types/node": "^24.13.4",
+		"@types/react": "^19.1.7",
+		"@types/react-dom": "^19.1.7",
+		"drizzle-kit": "^0.31.10",
+		"eslint": "^9",
+		"eslint-config-next": "16.3.4",
+		"miniflare": "^5.20260911.0-alpha",
+		"tailwindcss": "^4",
+		"typescript": "^5.7.4",
+		"vitest": "^5.0.0",
+		"wrangler": "^4.131.1"
+	}
+}
