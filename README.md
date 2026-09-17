@@ -111,14 +111,28 @@ main への push を Cloudflare の [Workers Builds](https://developers.cloudfla
 | 項目 | 値 |
 | --- | --- |
 | Build command | `npm run cf:build` |
-| Deploy command | `npm run cf:deploy` |
+| Deploy command | `npm run db:migrate:remote && npm run cf:deploy` |
 | Git branch | `main` |
 | Build variables | `D1_DATABASE_ID`, `APP_HOSTNAME` |
 
 `wrangler.jsonc` は追跡していないため、`npm run cf:config` が雛形のプレースホルダを
 これらの変数で埋めて生成する。手元に `wrangler.jsonc` がある場合は上書きしない。
 
-スキーマ変更は自動適用しない。`npm run db:migrate:remote` を手で流してからマージする。
+### スキーマ変更の進め方
+
+マイグレーションは deploy command の先頭で適用されるので、手で流す必要はない。
+`&&` で繋いでいるため、適用に失敗したらデプロイも行われず、古いコードが動き続ける。
+
+ただし**適用からデプロイ完了までの数分間は「新しいスキーマ + 古いコード」が同時に
+存在する**。この間に本番が壊れないよう、カラムやテーブルを消す変更は 2 回に分けて出す
+（expand / contract）。
+
+1. **expand**: 追加だけを行う PR。新しいカラム・テーブルを足し、コードは新旧どちらの
+   形でも動くようにする。古いカラムはまだ残す
+2. **contract**: 古いカラムを参照しなくなったことを確認してから、`DROP COLUMN` などを
+   含む PR を出す
+
+1 つの PR で「追加して古いものを落とす」をやると、順序をどう入れ替えても壊れる瞬間ができる。
 
 ### 手元からデプロイする場合
 
