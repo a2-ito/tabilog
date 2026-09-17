@@ -1,0 +1,1 @@
+CREATE INDEX `entries_trip_kind_rating_idx` ON `entries` (`trip_id`,`kind`,`rating`);
