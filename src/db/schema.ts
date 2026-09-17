@@ -85,7 +85,11 @@ export const entries = sqliteTable(
 		createdAt: text("created_at").notNull().default(now),
 		updatedAt: text("updated_at").notNull().default(now),
 	},
-	(t) => [index("entries_trip_idx").on(t.tripId, t.happenedAt)],
+	(t) => [
+		index("entries_trip_idx").on(t.tripId, t.happenedAt),
+		// 旅行ページの「種別」「★4 以上」での絞り込み用
+		index("entries_trip_kind_rating_idx").on(t.tripId, t.kind, t.rating),
+	],
 );
 
 /** 記録に添付した写真（実体は R2、ここにはキーだけ） */
