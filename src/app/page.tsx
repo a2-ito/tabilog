@@ -4,7 +4,7 @@ import { getDb } from "@/db";
 import { listTrips } from "@/db/queries";
 import { requireUser } from "@/lib/auth";
 import { formatDateRange } from "@/lib/datetime";
-import { formatJpy, formatMoney, jpyToLocalMinor, needsJpyConversion, sumAsJpy } from "@/lib/money";
+import { formatJpy, sumAsJpy, toRates } from "@/lib/money";
 
 export default async function HomePage() {
 	await requireUser();
@@ -37,21 +37,10 @@ export default async function HomePage() {
 									<span className="text-sm text-zinc-500">{formatDateRange(trip.startDate, trip.endDate)}</span>
 								</div>
 								<p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
-									{trip.entryCount} 件の記録 ・ 合計{" "}
-									{/* 現地通貨と円が混ざるので、いったん円に寄せてから現地通貨に直す */}
-									{formatMoney(
-										jpyToLocalMinor(
-											sumAsJpy(trip.amounts, trip.currency, trip.rateToJpy),
-											trip.currency,
-											trip.rateToJpy,
-										),
-										trip.currency,
-									)}
-									{needsJpyConversion(trip.currency) && (
-										<span className="text-zinc-500">
-											{" "}
-											（約 {formatJpy(sumAsJpy(trip.amounts, trip.currency, trip.rateToJpy))}）
-										</span>
+									{/* 通貨が混ざりうるので、合計は主通貨の円に寄せて出す */}
+									{trip.entryCount} 件の記録 ・ 合計 {formatJpy(sumAsJpy(trip.amounts, toRates(trip.currencies)))}
+									{trip.currencies.length > 0 && (
+										<span className="text-zinc-500"> ・ {trip.currencies.map((c) => c.code).join(" / ")}</span>
 									)}
 								</p>
 							</Link>

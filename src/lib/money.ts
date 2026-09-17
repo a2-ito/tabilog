@@ -8,6 +8,9 @@ const ZERO_DECIMAL_CURRENCIES = new Set(["JPY", "KRW", "VND", "CLP", "ISK", "PYG
 
 export const DEFAULT_CURRENCY = "JPY";
 
+/** 1 つの旅行に登録できる現地通貨の上限（円は別枠で常に使える） */
+export const MAX_TRIP_CURRENCIES = 10;
+
 /** よく使う通貨（フォームの選択肢用） */
 export const CURRENCY_OPTIONS = [
 	{ code: "JPY", label: "日本円 (JPY)" },
@@ -22,6 +25,12 @@ export const CURRENCY_OPTIONS = [
 	{ code: "CNY", label: "中国元 (CNY)" },
 	{ code: "VND", label: "ベトナムドン (VND)" },
 ] as const;
+
+/** 選択肢にある通貨は日本語名で、それ以外はコードのまま見せる */
+export function currencyLabel(code: string): string {
+	const normalized = normalizeCurrency(code);
+	return CURRENCY_OPTIONS.find((c) => c.code === normalized)?.label ?? normalized;
+}
 
 export function normalizeCurrency(code: string): string {
 	return code.trim().toUpperCase();
@@ -106,25 +115,27 @@ export function sumMinor(amounts: readonly number[]): number {
 /** 金額と、それを支払った通貨の組 */
 export type Amount = { minor: number; currency: string };
 
-/** 現地通貨を円に、円はそのまま。合計は円で持つのが一番ずれない */
-export function amountToJpy(amount: Amount, tripCurrency: string, rateToJpy: number): number {
+/** 通貨コード -> 現地通貨 1 単位あたりの円。円は常にレート 1 なので含めなくてよい */
+export type Rates = Readonly<Record<string, number>>;
+
+/** 旅行に登録された通貨のリストからレート表を作る */
+export function toRates(currencies: readonly { code: string; rateToJpy: number }[]): Rates {
+	const rates: Record<string, number> = {};
+	for (const c of currencies) rates[normalizeCurrency(c.code)] = c.rateToJpy;
+	return rates;
+}
+
+/** 円に換算する。レートの分からない通貨は換算できないので 0 とする */
+export function amountToJpy(amount: Amount, rates: Rates): number {
 	const currency = normalizeCurrency(amount.currency);
-	if (currency === "JPY") return amount.minor;
-	// 旅行の通貨であればそのレートで、想定外の通貨なら換算できないので円換算はしない
-	if (currency === normalizeCurrency(tripCurrency)) return toJpy(amount.minor, currency, rateToJpy);
-	return 0;
+	if (currency === DEFAULT_CURRENCY) return amount.minor;
+	const rate = rates[currency];
+	return rate === undefined ? 0 : toJpy(amount.minor, currency, rate);
 }
 
-export function sumAsJpy(amounts: readonly Amount[], tripCurrency: string, rateToJpy: number): number {
-	return amounts.reduce((acc, a) => acc + amountToJpy(a, tripCurrency, rateToJpy), 0);
-}
-
-/** 円を現地通貨の最小単位に直す（合計を現地通貨で見せるため） */
-export function jpyToLocalMinor(yen: number, currency: string, rateToJpy: number): number {
-	const code = normalizeCurrency(currency);
-	if (code === "JPY") return yen;
-	if (rateToJpy <= 0) return 0;
-	return Math.round((yen / rateToJpy) * 10 ** currencyDigits(code));
+/** 通貨が混ざっていても合計は円で持つのが一番ずれない */
+export function sumAsJpy(amounts: readonly Amount[], rates: Rates): number {
+	return amounts.reduce((acc, a) => acc + amountToJpy(a, rates), 0);
 }
 
 /** 通貨ごとに合計する。表示順は渡された順のまま */

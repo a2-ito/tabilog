@@ -2,11 +2,10 @@
 
 import { useActionState, useState } from "react";
 import { saveEntry } from "@/app/actions/entries";
-import type { EntryWithMeta } from "@/db/queries";
-import type { Trip } from "@/db/schema";
+import type { EntryWithMeta, TripWithCurrencies } from "@/db/queries";
 import { nowWallClock } from "@/lib/datetime";
 import { initialActionState } from "@/lib/form";
-import { minorToInput, needsJpyConversion, normalizeCurrency } from "@/lib/money";
+import { currencyLabel, DEFAULT_CURRENCY, minorToInput, normalizeCurrency } from "@/lib/money";
 import { PhotoInput } from "./photo-input";
 import { Field, FormMessage, inputClass, SubmitButton } from "./ui";
 
@@ -16,15 +15,15 @@ const KIND_LABELS = [
 	{ value: "other", label: "📌 その他" },
 ] as const;
 
-export function EntryForm({ trip, entry }: { trip: Trip; entry?: EntryWithMeta }) {
+export function EntryForm({ trip, entry }: { trip: TripWithCurrencies; entry?: EntryWithMeta }) {
 	const [state, formAction] = useActionState(saveEntry, initialActionState);
-	// 現地で払うとは限らない（日本で先に払った宿代など）ので、入力通貨を選べるようにする
-	const entryCurrency = entry?.amountCurrency ?? trip.currency;
-	const [inputCurrency, setInputCurrency] = useState(
-		normalizeCurrency(entryCurrency) === "JPY" ? "JPY" : "local",
-	);
-	// 旅行そのものが円建てなら選ぶ意味がない
-	const canChooseCurrency = needsJpyConversion(trip.currency);
+	// 現地で払うとは限らない（日本で先に払った宿代など）ので、入力通貨を選べるようにする。
+	// 円はどの旅行でも使えるので、旅行に登録された現地通貨と並べて選ばせる
+	const choices = [...trip.currencies.map((c) => c.code), DEFAULT_CURRENCY];
+	const defaultCurrency = normalizeCurrency(entry?.amountCurrency ?? choices[0] ?? DEFAULT_CURRENCY);
+	const [inputCurrency, setInputCurrency] = useState(defaultCurrency);
+	// 選択肢が 1 つ（＝円だけの旅行）なら選ばせる意味がない
+	const canChooseCurrency = choices.length > 1;
 
 	return (
 		<form action={formAction} className="space-y-4">
@@ -57,7 +56,7 @@ export function EntryForm({ trip, entry }: { trip: Trip; entry?: EntryWithMeta }
 						<input
 							name="amount"
 							inputMode="decimal"
-							defaultValue={entry?.amountMinor != null ? minorToInput(entry.amountMinor, entryCurrency) : ""}
+							defaultValue={entry?.amountMinor != null ? minorToInput(entry.amountMinor, defaultCurrency) : ""}
 							className={`${inputClass} min-w-0 flex-1`}
 							placeholder="200"
 						/>
@@ -70,12 +69,15 @@ export function EntryForm({ trip, entry }: { trip: Trip; entry?: EntryWithMeta }
 									aria-label="金額の通貨"
 									className={inputClass}
 								>
-									<option value="local">{trip.currency}</option>
-									<option value="JPY">JPY</option>
+									{choices.map((code) => (
+										<option key={code} value={code} title={currencyLabel(code)}>
+											{code}
+										</option>
+									))}
 								</select>
 							</div>
 						) : (
-							<input type="hidden" name="amountCurrency" value="local" />
+							<input type="hidden" name="amountCurrency" value={inputCurrency} />
 						)}
 					</div>
 				</Field>

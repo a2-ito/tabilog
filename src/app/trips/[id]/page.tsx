@@ -6,7 +6,7 @@ import { getDb } from "@/db";
 import { getTrip, listEntries } from "@/db/queries";
 import { requireUser } from "@/lib/auth";
 import { formatDateRange, formatWallClock } from "@/lib/datetime";
-import { formatJpy, formatMoney, jpyToLocalMinor, needsJpyConversion, sumAsJpy } from "@/lib/money";
+import { DEFAULT_CURRENCY, formatJpy, formatMoney, sumAsJpy, sumByCurrency, toRates } from "@/lib/money";
 import { photoUrl } from "@/lib/photos";
 
 const KIND_LABELS: Record<string, string> = { food: "🍜 食べた", shopping: "🛍️ 買った", other: "📌 その他" };
@@ -36,12 +36,13 @@ export default async function TripPage({ params, searchParams }: PageProps<"/tri
 		minRating: Number.isInteger(minRating) && minRating! >= 1 && minRating! <= 5 ? minRating : undefined,
 	});
 
-	// 記録ごとに通貨が違いうるので、円に寄せてから現地通貨に直して見せる
+	// 記録ごとに通貨が違いうるので、合計は主通貨の円で出し、内訳を通貨ごとに添える
+	const rates = toRates(trip.currencies);
 	const amounts = entries
 		.filter((e) => e.amountMinor !== null)
-		.map((e) => ({ minor: e.amountMinor as number, currency: e.amountCurrency ?? trip.currency }));
-	const totalJpy = sumAsJpy(amounts, trip.currency, trip.rateToJpy);
-	const totalMinor = jpyToLocalMinor(totalJpy, trip.currency, trip.rateToJpy);
+		.map((e) => ({ minor: e.amountMinor as number, currency: e.amountCurrency ?? DEFAULT_CURRENCY }));
+	const totalJpy = sumAsJpy(amounts, rates);
+	const byCurrency = sumByCurrency(amounts);
 	const filterHref = (k: string) => {
 		const params = new URLSearchParams();
 		if (k) params.set("kind", k);
@@ -66,10 +67,12 @@ export default async function TripPage({ params, searchParams }: PageProps<"/tri
 				<div className="flex flex-wrap items-center justify-between gap-3">
 					<div>
 						<h1 className="text-xl font-bold">{trip.name}</h1>
-						<p className="text-sm text-zinc-500">
-							{formatDateRange(trip.startDate, trip.endDate)} ・ {trip.currency}
-							{needsJpyConversion(trip.currency) && ` (1 ${trip.currency} = ${trip.rateToJpy} 円)`}
-						</p>
+						<p className="text-sm text-zinc-500">{formatDateRange(trip.startDate, trip.endDate)}</p>
+						{trip.currencies.length > 0 && (
+							<p className="text-xs text-zinc-500">
+								{trip.currencies.map((c) => `1 ${c.code} = ${c.rateToJpy} 円`).join(" ・ ")}
+							</p>
+						)}
 					</div>
 					<div className="flex gap-2">
 						<LinkButton href={`/trips/${trip.id}/edit`}>編集</LinkButton>
@@ -83,8 +86,13 @@ export default async function TripPage({ params, searchParams }: PageProps<"/tri
 
 			<div className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950">
 				<p className="text-sm text-zinc-500">表示中の {entries.length} 件の合計</p>
-				<p className="text-2xl font-bold">{formatMoney(totalMinor, trip.currency)}</p>
-				{needsJpyConversion(trip.currency) && <p className="text-sm text-zinc-500">約 {formatJpy(totalJpy)}</p>}
+				<p className="text-2xl font-bold">{formatJpy(totalJpy)}</p>
+				{/* 円だけの内訳なら合計と同じなので出さない */}
+				{(byCurrency.length > 1 || byCurrency.some((c) => c.currency !== DEFAULT_CURRENCY)) && (
+					<p className="text-sm text-zinc-500">
+						{byCurrency.map((c) => formatMoney(c.minor, c.currency)).join(" ・ ")}
+					</p>
+				)}
 			</div>
 
 			<div className="flex flex-wrap gap-2 text-sm">
@@ -140,7 +148,7 @@ export default async function TripPage({ params, searchParams }: PageProps<"/tri
 										</h2>
 										{entry.amountMinor != null && (
 											<span className="text-sm font-medium">
-												{formatMoney(entry.amountMinor, entry.amountCurrency ?? trip.currency)}
+												{formatMoney(entry.amountMinor, entry.amountCurrency ?? DEFAULT_CURRENCY)}
 											</span>
 										)}
 									</div>

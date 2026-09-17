@@ -19,7 +19,7 @@ import { ENTRY_KINDS } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
 import { toWallClock } from "@/lib/datetime";
 import { type ActionState, idFromForm, optionalIdFromForm, optionalText, parseForm } from "@/lib/form";
-import { parseAmountToMinor } from "@/lib/money";
+import { DEFAULT_CURRENCY, normalizeCurrency, parseAmountToMinor } from "@/lib/money";
 import { deletePhotos, storePhotos } from "@/lib/photos";
 
 const entrySchema = z.object({
@@ -30,8 +30,12 @@ const entrySchema = z.object({
 	place: optionalText(200),
 	/** 通貨ごとの桁数が要るので、ここでは文字列のまま受けて後段で最小単位に直す */
 	amount: optionalText(30),
-	/** 金額をどの通貨で入力したか。local = 旅行の通貨 */
-	amountCurrency: z.enum(["local", "JPY"]).default("local"),
+	/** 金額をどの通貨で入力したか。旅行に登録された通貨か円のみ受け付ける */
+	amountCurrency: z
+		.string()
+		.trim()
+		.regex(/^[A-Za-z]{3}$/, "通貨コードは 3 文字で入力してください")
+		.default(DEFAULT_CURRENCY),
 	/** 0 は「未評価」 */
 	rating: z.coerce.number().int().min(0).max(5).default(0),
 	note: optionalText(2000),
@@ -51,8 +55,13 @@ export async function saveEntry(_prev: ActionState, formData: FormData): Promise
 	const trip = await getTrip(db, tripId);
 	if (!trip) return { error: "旅行が見つかりません" };
 
-	// 現地で払ったか日本円で払ったかは記録ごとに変わるので、入力通貨も一緒に残す
-	const currency = amountCurrency === "JPY" ? "JPY" : trip.currency;
+	// 現地で払ったか日本円で払ったかは記録ごとに変わるので、入力通貨も一緒に残す。
+	// 円はどの旅行でも使えるが、現地通貨は旅行に登録されたものだけ
+	const currency = normalizeCurrency(amountCurrency);
+	if (currency !== DEFAULT_CURRENCY && !trip.currencies.some((c) => c.code === currency)) {
+		return { error: "この旅行で使えない通貨です" };
+	}
+
 	let amountMinor: number | undefined;
 	if (amount !== undefined) {
 		const minor = parseAmountToMinor(amount, currency);

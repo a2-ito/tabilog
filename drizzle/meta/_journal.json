@@ -15,6 +15,13 @@
       "when": 1789304237504,
       "tag": "0001_remarkable_rocket_raccoon",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1789641472260,
+      "tag": "0002_solid_radioactive_man",
+      "breakpoints": true
     }
   ]
 }
