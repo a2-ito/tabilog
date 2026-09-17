@@ -8,7 +8,7 @@ import { getDb } from "@/db";
 import { getEntry, getTrip, listComments } from "@/db/queries";
 import { requireUser } from "@/lib/auth";
 import { formatTimestamp, formatWallClock } from "@/lib/datetime";
-import { amountToJpy, formatJpy, formatMoney, normalizeCurrency } from "@/lib/money";
+import { amountToJpy, DEFAULT_CURRENCY, formatJpy, formatMoney, normalizeCurrency, toRates } from "@/lib/money";
 import { photoUrl } from "@/lib/photos";
 
 const KIND_LABELS: Record<string, string> = { food: "🍜 食べた", shopping: "🛍️ 買った", other: "📌 その他" };
@@ -26,7 +26,7 @@ export default async function EntryPage({ params }: PageProps<"/trips/[id]/entri
 	const comments = await listComments(db, entry.id);
 
 	const authorName = entry.author.name ?? entry.author.email;
-	const entryCurrency = entry.amountCurrency ?? trip.currency;
+	const entryCurrency = entry.amountCurrency ?? DEFAULT_CURRENCY;
 
 	return (
 		<div className="space-y-6">
@@ -52,12 +52,10 @@ export default async function EntryPage({ params }: PageProps<"/trips/[id]/entri
 					<p className="text-xl font-bold">
 						{formatMoney(entry.amountMinor, entryCurrency)}
 						{/* 円で入力された記録に円換算を添えても意味がない */}
-						{normalizeCurrency(entryCurrency) !== "JPY" && (
+						{normalizeCurrency(entryCurrency) !== DEFAULT_CURRENCY && (
 							<span className="ml-2 text-sm font-normal text-zinc-500">
 								約{" "}
-								{formatJpy(
-									amountToJpy({ minor: entry.amountMinor, currency: entryCurrency }, trip.currency, trip.rateToJpy),
-								)}
+								{formatJpy(amountToJpy({ minor: entry.amountMinor, currency: entryCurrency }, toRates(trip.currencies)))}
 							</span>
 						)}
 					</p>

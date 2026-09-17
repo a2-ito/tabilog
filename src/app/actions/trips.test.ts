@@ -30,52 +30,99 @@ beforeEach(async () => {
 	revalidated.length = 0;
 });
 
-const valid = { name: "台湾旅行", currency: "twd", rateToJpy: "4.7", startDate: "2026-03-01", endDate: "2026-03-05" };
+const valid = { name: "台湾旅行", startDate: "2026-03-01", endDate: "2026-03-05" };
+
+/** 通貨は 1 行 = (currencyCode, currencyRate) の組で送る */
+function tripForm(fields: Record<string, string | number | undefined>, currencies: [string, string][] = [["twd", "4.7"]]) {
+	const fd = formData(fields);
+	for (const [code, rate] of currencies) {
+		fd.append("currencyCode", code);
+		fd.append("currencyRate", rate);
+	}
+	return fd;
+}
 
 describe("saveTrip", () => {
 	it("作成して詳細ページへ遷移する", async () => {
-		const to = await expectRedirect(() => saveTrip({}, formData(valid)));
+		const to = await expectRedirect(() => saveTrip({}, tripForm(valid)));
 		expect(to).toBe("/trips/1");
 
 		const trip = await getTrip(t.db, 1);
-		expect(trip).toMatchObject({ name: "台湾旅行", currency: "TWD", startDate: "2026-03-01" });
-		expect(trip?.rateToJpy).toBeCloseTo(4.7);
+		expect(trip).toMatchObject({ name: "台湾旅行", startDate: "2026-03-01" });
+		// 通貨コードは大文字に揃える
+		expect(trip?.currencies.map((c) => c.code)).toEqual(["TWD"]);
+		expect(trip?.currencies[0]?.rateToJpy).toBeCloseTo(4.7);
 		expect(revalidated).toEqual(expect.arrayContaining(["/", "/trips/1"]));
 	});
 
-	it("通貨コードは大文字に揃える", async () => {
-		await expectRedirect(() => saveTrip({}, formData({ ...valid, currency: "jpy", rateToJpy: "1" })));
-		expect((await getTrip(t.db, 1))?.currency).toBe("JPY");
+	it("通貨を複数登録できる（並べた順のまま）", async () => {
+		await expectRedirect(() =>
+			saveTrip({}, tripForm(valid, [
+				["thb", "4.3"],
+				["vnd", "0.0059"],
+			])),
+		);
+		const trip = await getTrip(t.db, 1);
+		expect(trip?.currencies.map((c) => c.code)).toEqual(["THB", "VND"]);
 	});
 
-	it("既存の旅行を更新する", async () => {
-		await expectRedirect(() => saveTrip({}, formData(valid)));
-		await expectRedirect(() => saveTrip({}, formData({ ...valid, id: 1, name: "台湾旅行（改）" })));
-		expect((await getTrip(t.db, 1))?.name).toBe("台湾旅行（改）");
+	it("円は主通貨なので保存しない", async () => {
+		await expectRedirect(() => saveTrip({}, tripForm(valid, [["JPY", "1"], ["TWD", "4.7"]])));
+		expect((await getTrip(t.db, 1))?.currencies.map((c) => c.code)).toEqual(["TWD"]);
+	});
+
+	it("通貨を 1 つも選ばない旅行も作れる", async () => {
+		await expectRedirect(() => saveTrip({}, tripForm(valid, [])));
+		expect((await getTrip(t.db, 1))?.currencies).toEqual([]);
+	});
+
+	it("選んでいない行（通貨コードが空）は無視する", async () => {
+		await expectRedirect(() => saveTrip({}, tripForm(valid, [["TWD", "4.7"], ["", ""]])));
+		expect((await getTrip(t.db, 1))?.currencies.map((c) => c.code)).toEqual(["TWD"]);
+	});
+
+	it("同じ通貨が重複しているとエラー", async () => {
+		const state = await saveTrip({}, tripForm(valid, [["TWD", "4.7"], ["twd", "4.8"]]));
+		expect(state.error).toMatch(/重複/);
+		expect(await listTrips(t.db)).toHaveLength(0);
+	});
+
+	it("既存の旅行を更新すると通貨も入れ替わる", async () => {
+		await expectRedirect(() => saveTrip({}, tripForm(valid)));
+		await expectRedirect(() =>
+			saveTrip({}, tripForm({ ...valid, id: 1, name: "台湾旅行（改）" }, [["KRW", "0.11"]])),
+		);
+		const trip = await getTrip(t.db, 1);
+		expect(trip?.name).toBe("台湾旅行（改）");
+		expect(trip?.currencies.map((c) => c.code)).toEqual(["KRW"]);
 		expect(await listTrips(t.db)).toHaveLength(1);
 	});
 
 	it.each([
-		["旅行名が空", { name: "" }, /旅行名を入力/],
-		["通貨コードが 3 文字でない", { currency: "JPYY" }, /通貨コード/],
-		["レートが 0", { rateToJpy: "0" }, /換算レート/],
-		["日付の形式が不正", { startDate: "2026/03/01" }, /日付の形式/],
-		["終了日が開始日より前", { startDate: "2026-03-05", endDate: "2026-03-01" }, /終了日/],
-	])("%s なら保存せずエラーを返す", async (_name, override, pattern) => {
-		const state = await saveTrip({}, formData({ ...valid, ...override }));
-		expect(state.error).toMatch(pattern);
-		expect(await listTrips(t.db)).toHaveLength(0);
-	});
+		["旅行名が空", { name: "" }, undefined, /旅行名を入力/],
+		["通貨コードが 3 文字でない", {}, [["JPYY", "1"]], /通貨コード/],
+		["レートが 0", {}, [["TWD", "0"]], /換算レート/],
+		["レートが空欄", {}, [["TWD", ""]], /換算レート/],
+		["日付の形式が不正", { startDate: "2026/03/01" }, undefined, /日付の形式/],
+		["終了日が開始日より前", { startDate: "2026-03-05", endDate: "2026-03-01" }, undefined, /終了日/],
+	] as [string, Record<string, string>, [string, string][] | undefined, RegExp][])(
+		"%s なら保存せずエラーを返す",
+		async (_name, override, currencies, pattern) => {
+			const state = await saveTrip({}, tripForm({ ...valid, ...override }, currencies));
+			expect(state.error).toMatch(pattern);
+			expect(await listTrips(t.db)).toHaveLength(0);
+		},
+	);
 
 	it("存在しない旅行の更新はエラー", async () => {
-		const state = await saveTrip({}, formData({ ...valid, id: 999 }));
+		const state = await saveTrip({}, tripForm({ ...valid, id: 999 }));
 		expect(state.error).toMatch(/見つかりません/);
 	});
 });
 
 describe("deleteTripAction", () => {
 	it("削除して一覧へ戻る", async () => {
-		await expectRedirect(() => saveTrip({}, formData(valid)));
+		await expectRedirect(() => saveTrip({}, tripForm(valid)));
 		const to = await expectRedirect(() => deleteTripAction(formData({ id: 1 })));
 		expect(to).toBe("/");
 		expect(await getTrip(t.db, 1)).toBeNull();

@@ -27,9 +27,19 @@ afterAll(() => t.dispose());
 beforeEach(async () => {
 	await t.truncate();
 	const user = await upsertUser(t.db, { email: "tester@example.com", name: "Tester", image: null });
-	// 通貨が 2 桁の旅行（TWD）と 0 桁の旅行（JPY）を用意する
-	await createTrip(t.db, { name: "台湾旅行", currency: "TWD", rateToJpy: 4.7 }, user.id);
-	await createTrip(t.db, { name: "国内旅行", currency: "JPY", rateToJpy: 1 }, user.id);
+	// 現地通貨のある旅行（TWD・THB）と、円だけの旅行を用意する
+	await createTrip(
+		t.db,
+		{
+			name: "台湾・タイ旅行",
+			currencies: [
+				{ code: "TWD", rateToJpy: 4.7 },
+				{ code: "THB", rateToJpy: 4.3 },
+			],
+		},
+		user.id,
+	);
+	await createTrip(t.db, { name: "国内旅行", currencies: [] }, user.id);
 	revalidated.length = 0;
 });
 
@@ -38,7 +48,7 @@ const valid = { tripId: 1, kind: "food", title: "小籠包", happenedAt: "2026-0
 describe("saveEntry", () => {
 	it("記録して詳細ページへ遷移する", async () => {
 		const to = await expectRedirect(() =>
-			saveEntry({}, formData({ ...valid, place: "鼎泰豐", amount: "200", rating: 5, note: "熱々" })),
+			saveEntry({}, formData({ ...valid, place: "鼎泰豐", amount: "200", amountCurrency: "TWD", rating: 5, note: "熱々" })),
 		);
 		expect(to).toBe("/trips/1/entries/1");
 
@@ -55,12 +65,28 @@ describe("saveEntry", () => {
 		expect(revalidated).toEqual(expect.arrayContaining(["/trips/1", "/trips/1/entries/1"]));
 	});
 
-	it("金額は旅行の通貨の最小単位で保存する", async () => {
-		await expectRedirect(() => saveEntry({}, formData({ ...valid, amount: "12.34" })));
+	it("金額は選んだ通貨の最小単位で保存する", async () => {
+		await expectRedirect(() => saveEntry({}, formData({ ...valid, amount: "12.34", amountCurrency: "TWD" })));
 		expect(await getEntry(t.db, 1)).toMatchObject({ amountMinor: 1234, amountCurrency: "TWD" });
 
 		await expectRedirect(() => saveEntry({}, formData({ ...valid, tripId: 2, amount: "1200" })));
 		expect(await getEntry(t.db, 2)).toMatchObject({ amountMinor: 1200, amountCurrency: "JPY" });
+	});
+
+	it("旅行に登録した通貨をそれぞれ選べる", async () => {
+		await expectRedirect(() => saveEntry({}, formData({ ...valid, amount: "120", amountCurrency: "THB" })));
+		expect(await getEntry(t.db, 1)).toMatchObject({ amountMinor: 12000, amountCurrency: "THB" });
+	});
+
+	it("旅行に登録していない通貨は受け付けない", async () => {
+		const state = await saveEntry({}, formData({ ...valid, amount: "100", amountCurrency: "EUR" }));
+		expect(state.error).toMatch(/使えない通貨/);
+		expect(await getEntry(t.db, 1)).toBeNull();
+	});
+
+	it("円は登録していなくても使える", async () => {
+		await expectRedirect(() => saveEntry({}, formData({ ...valid, tripId: 2, amount: "1200", amountCurrency: "jpy" })));
+		expect(await getEntry(t.db, 1)).toMatchObject({ amountMinor: 1200, amountCurrency: "JPY" });
 	});
 
 	it("日本円を選ぶと円のまま保存する", async () => {
@@ -74,9 +100,9 @@ describe("saveEntry", () => {
 		expect((await getEntry(t.db, 1))?.amountMinor).toBe(101);
 	});
 
-	it("通貨を指定しなければ旅行の通貨で入力したものとして扱う", async () => {
+	it("通貨を指定しなければ円として扱う", async () => {
 		await expectRedirect(() => saveEntry({}, formData({ ...valid, amount: "200" })));
-		expect((await getEntry(t.db, 1))?.amountCurrency).toBe("TWD");
+		expect((await getEntry(t.db, 1))?.amountCurrency).toBe("JPY");
 	});
 
 	it("金額が空なら通貨も残さない", async () => {
@@ -87,7 +113,7 @@ describe("saveEntry", () => {
 	it("円で入れた記録を現地通貨に入れ直せる", async () => {
 		await expectRedirect(() => saveEntry({}, formData({ ...valid, amount: "48000", amountCurrency: "JPY" })));
 		await expectRedirect(() =>
-			saveEntry({}, formData({ ...valid, id: 1, amount: "200", amountCurrency: "local" })),
+			saveEntry({}, formData({ ...valid, id: 1, amount: "200", amountCurrency: "TWD" })),
 		);
 		expect(await getEntry(t.db, 1)).toMatchObject({ amountMinor: 20000, amountCurrency: "TWD" });
 	});
@@ -141,7 +167,8 @@ describe("saveEntry", () => {
 		["存在しない日時", { happenedAt: "2026-02-30T12:00" }, /日時の形式/],
 		["金額が数値でない", { amount: "たかい" }, /金額/],
 		["評価が範囲外", { rating: 9 }, /rating/],
-		["通貨の指定が不正", { amount: "100", amountCurrency: "USD" }, /amountCurrency/],
+		["通貨コードの形が不正", { amount: "100", amountCurrency: "TWDD" }, /通貨コード/],
+		["旅行に無い通貨", { amount: "100", amountCurrency: "USD" }, /使えない通貨/],
 	])("%s なら保存せずエラーを返す", async (_name, override, pattern) => {
 		const state = await saveEntry({}, formData({ ...valid, ...override }));
 		expect(state.error).toMatch(pattern);

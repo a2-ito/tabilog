@@ -7,7 +7,7 @@ import { getDb } from "@/db";
 import { createTrip, deleteTrip, getTrip, listTripPhotoKeys, updateTrip } from "@/db/queries";
 import { requireUser } from "@/lib/auth";
 import { type ActionState, idFromForm, optionalIdFromForm, optionalText, parseForm } from "@/lib/form";
-import { normalizeCurrency } from "@/lib/money";
+import { DEFAULT_CURRENCY, MAX_TRIP_CURRENCIES, normalizeCurrency } from "@/lib/money";
 import { deletePhotos } from "@/lib/photos";
 
 const optionalDate = z.preprocess(
@@ -24,11 +24,6 @@ const tripSchema = z
 		name: z.string().trim().min(1, "旅行名を入力してください").max(100, "旅行名が長すぎます"),
 		startDate: optionalDate,
 		endDate: optionalDate,
-		currency: z
-			.string()
-			.trim()
-			.regex(/^[A-Za-z]{3}$/, "通貨コードは 3 文字で入力してください"),
-		rateToJpy: z.coerce.number().positive("換算レートは 0 より大きい数を入力してください").max(100000),
 		note: optionalText(1000),
 	})
 	.refine((v) => !v.startDate || !v.endDate || v.startDate <= v.endDate, {
@@ -36,13 +31,57 @@ const tripSchema = z
 		path: ["endDate"],
 	});
 
+/** 通貨は行が増減するので、1 行 = (currencyCode, currencyRate) の組で受ける */
+const currencyRowSchema = z.object({
+	code: z
+		.string()
+		.trim()
+		.regex(/^[A-Za-z]{3}$/, "通貨コードは 3 文字で入力してください"),
+	rateToJpy: z.coerce.number().positive("換算レートは 0 より大きい数を入力してください").max(100000),
+});
+
+type CurrencyRows = { ok: true; rows: { code: string; rateToJpy: number }[] } | { ok: false; error: string };
+
+/**
+ * 通貨の行を FormData から取り出す。
+ * parseForm は同名フィールドを 1 つにまとめてしまうので、ここだけ別に読む。
+ */
+function parseCurrencyRows(formData: FormData): CurrencyRows {
+	const codes = formData.getAll("currencyCode");
+	const rates = formData.getAll("currencyRate");
+	const rows: { code: string; rateToJpy: number }[] = [];
+	const seen = new Set<string>();
+
+	for (const [i, rawCode] of codes.entries()) {
+		// コードが空の行は「まだ選んでいない行」なので無視する
+		if (typeof rawCode !== "string" || rawCode.trim() === "") continue;
+		const parsed = currencyRowSchema.safeParse({ code: rawCode, rateToJpy: rates[i] ?? "" });
+		if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "通貨の指定が不正です" };
+
+		const code = normalizeCurrency(parsed.data.code);
+		// 円は主通貨として常に使えるので保存しない
+		if (code === DEFAULT_CURRENCY) continue;
+		if (seen.has(code)) return { ok: false, error: `通貨 ${code} が重複しています` };
+		seen.add(code);
+		rows.push({ code, rateToJpy: parsed.data.rateToJpy });
+	}
+
+	if (rows.length > MAX_TRIP_CURRENCIES) {
+		return { ok: false, error: `通貨は ${MAX_TRIP_CURRENCIES} 個まで登録できます` };
+	}
+	return { ok: true, rows };
+}
+
 export async function saveTrip(_prev: ActionState, formData: FormData): Promise<ActionState> {
 	const user = await requireUser();
 	const parsed = parseForm(tripSchema, formData);
 	if (!parsed.ok) return { error: parsed.error };
 
+	const currencies = parseCurrencyRows(formData);
+	if (!currencies.ok) return { error: currencies.error };
+
 	const { id, ...input } = parsed.data;
-	const values = { ...input, currency: normalizeCurrency(input.currency) };
+	const values = { ...input, currencies: currencies.rows };
 
 	const db = await getDb();
 	let tripId = id;

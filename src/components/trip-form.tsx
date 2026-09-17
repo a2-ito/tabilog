@@ -1,16 +1,33 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useId, useState } from "react";
 import { saveTrip } from "@/app/actions/trips";
-import type { Trip } from "@/db/schema";
+import type { TripWithCurrencies } from "@/db/queries";
 import { initialActionState } from "@/lib/form";
-import { CURRENCY_OPTIONS, DEFAULT_CURRENCY } from "@/lib/money";
+import { CURRENCY_OPTIONS, DEFAULT_CURRENCY, MAX_TRIP_CURRENCIES } from "@/lib/money";
 import { Field, FormMessage, inputClass, SubmitButton } from "./ui";
 
-export function TripForm({ trip }: { trip?: Trip }) {
+/** 円は主通貨として常に使えるので、選択肢からは外す */
+const LOCAL_CURRENCY_OPTIONS = CURRENCY_OPTIONS.filter((c) => c.code !== DEFAULT_CURRENCY);
+
+type CurrencyRow = { key: string; code: string; rate: string };
+
+function toRows(trip?: TripWithCurrencies): CurrencyRow[] {
+	return (trip?.currencies ?? []).map((c) => ({ key: `saved-${c.id}`, code: c.code, rate: String(c.rateToJpy) }));
+}
+
+export function TripForm({ trip }: { trip?: TripWithCurrencies }) {
 	const [state, formAction] = useActionState(saveTrip, initialActionState);
-	const [currency, setCurrency] = useState(trip?.currency ?? DEFAULT_CURRENCY);
-	const isJpy = currency.toUpperCase() === "JPY";
+	const [rows, setRows] = useState<CurrencyRow[]>(() => toRows(trip));
+	const rowIdPrefix = useId();
+
+	// 同じ通貨を 2 度選べないよう、他の行で使っている通貨は選択肢から外す
+	const usedCodes = new Set(rows.map((r) => r.code).filter((c) => c !== ""));
+	const addRow = () =>
+		setRows((prev) => [...prev, { key: `${rowIdPrefix}-${prev.length}-${Date.now()}`, code: "", rate: "" }]);
+	const removeRow = (key: string) => setRows((prev) => prev.filter((r) => r.key !== key));
+	const updateRow = (key: string, patch: Partial<CurrencyRow>) =>
+		setRows((prev) => prev.map((r) => (r.key === key ? { ...r, ...patch } : r)));
 
 	return (
 		<form action={formAction} className="space-y-4">
@@ -30,29 +47,63 @@ export function TripForm({ trip }: { trip?: Trip }) {
 				</Field>
 			</div>
 
-			<div className="grid gap-4 sm:grid-cols-2">
-				<Field label="現地通貨">
-					<select name="currency" value={currency} onChange={(e) => setCurrency(e.target.value)} className={inputClass}>
-						{CURRENCY_OPTIONS.map((c) => (
-							<option key={c.code} value={c.code}>
-								{c.label}
-							</option>
-						))}
-					</select>
-				</Field>
-				<Field label="円換算レート" hint={isJpy ? "日本円なので 1 のままで大丈夫です" : `現地通貨 1 ${currency} が何円か`}>
-					<input
-						type="number"
-						name="rateToJpy"
-						step="0.0001"
-						min="0.0001"
-						defaultValue={trip?.rateToJpy ?? 1}
-						required
-						readOnly={isJpy}
-						className={inputClass}
-					/>
-				</Field>
-			</div>
+			<fieldset className="space-y-2">
+				<legend className="text-sm font-medium text-zinc-700 dark:text-zinc-300">現地通貨</legend>
+				<p className="text-xs text-zinc-500">
+					日本円はいつでも使えます。現地で使う通貨と、その 1 単位が何円かを登録してください（複数可）
+				</p>
+
+				{rows.map((row) => (
+					<div key={row.key} className="flex items-start gap-2">
+						<div className="min-w-0 flex-1">
+							<select
+								name="currencyCode"
+								value={row.code}
+								onChange={(e) => updateRow(row.key, { code: e.target.value })}
+								aria-label="通貨"
+								className={inputClass}
+							>
+								<option value="">選択してください</option>
+								{LOCAL_CURRENCY_OPTIONS.filter((c) => c.code === row.code || !usedCodes.has(c.code)).map((c) => (
+									<option key={c.code} value={c.code}>
+										{c.label}
+									</option>
+								))}
+							</select>
+						</div>
+						<div className="w-32 shrink-0">
+							<input
+								name="currencyRate"
+								type="number"
+								step="0.0001"
+								min="0.0001"
+								value={row.rate}
+								onChange={(e) => updateRow(row.key, { rate: e.target.value })}
+								aria-label={row.code ? `1 ${row.code} あたりの円` : "1 単位あたりの円"}
+								placeholder="4.7"
+								className={inputClass}
+							/>
+						</div>
+						<button
+							type="button"
+							onClick={() => removeRow(row.key)}
+							aria-label="この通貨を削除"
+							className="shrink-0 rounded-md border border-zinc-300 px-3 py-2 text-sm text-zinc-600 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+						>
+							削除
+						</button>
+					</div>
+				))}
+
+				<button
+					type="button"
+					onClick={addRow}
+					disabled={rows.length >= MAX_TRIP_CURRENCIES}
+					className="rounded-md border border-dashed border-zinc-400 px-3 py-2 text-sm text-zinc-600 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800"
+				>
+					＋ 通貨を追加
+				</button>
+			</fieldset>
 
 			<Field label="メモ">
 				<textarea name="note" defaultValue={trip?.note ?? ""} rows={3} maxLength={1000} className={inputClass} />

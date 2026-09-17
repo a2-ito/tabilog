@@ -1,7 +1,8 @@
 import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
+import { DEFAULT_CURRENCY } from "@/lib/money";
 import type { Db } from "./index";
-import { comments, entries, entryPhotos, trips, users } from "./schema";
-import type { Comment, Entry, EntryPhoto, Trip, User } from "./schema";
+import { comments, entries, entryPhotos, tripCurrencies, trips, users } from "./schema";
+import type { Comment, Entry, EntryPhoto, Trip, TripCurrency, User } from "./schema";
 
 /* ── users ─────────────────────────────────────────────────── */
 
@@ -25,7 +26,10 @@ export async function upsertUser(
 
 /* ── trips ─────────────────────────────────────────────────── */
 
-export type TripSummary = Trip & {
+/** 旅行と、そこで使う通貨（円以外）。円は主通貨なので常に使える */
+export type TripWithCurrencies = Trip & { currencies: TripCurrency[] };
+
+export type TripSummary = TripWithCurrencies & {
 	entryCount: number;
 	/** 記録ごとの金額と通貨。合計の出し方は表示側（lib/money）に任せる */
 	amounts: { minor: number; currency: string }[];
@@ -55,29 +59,55 @@ export async function listTrips(db: Db): Promise<TripSummary[]> {
 	for (const row of amountRows) {
 		if (row.minor === null) continue;
 		const list = byTrip.get(row.tripId) ?? [];
-		// 通貨が入っていない古い記録は、旅行の通貨で入力されたものとして扱う
-		list.push({ minor: row.minor, currency: row.currency ?? "" });
+		// 通貨が入っていない古い記録は円で入力されたものとして扱う
+		list.push({ minor: row.minor, currency: row.currency ?? DEFAULT_CURRENCY });
 		byTrip.set(row.tripId, list);
 	}
 
+	const currencies = await listCurrenciesFor(
+		db,
+		rows.map((r) => r.trip.id),
+	);
+
 	return rows.map((r) => ({
 		...r.trip,
+		currencies: currencies.get(r.trip.id) ?? [],
 		entryCount: Number(r.entryCount),
-		amounts: (byTrip.get(r.trip.id) ?? []).map((a) => ({ ...a, currency: a.currency || r.trip.currency })),
+		amounts: byTrip.get(r.trip.id) ?? [],
 	}));
 }
 
-export async function getTrip(db: Db, id: number): Promise<Trip | null> {
-	const [row] = await db.select().from(trips).where(eq(trips.id, id)).limit(1);
-	return row ?? null;
+async function listCurrenciesFor(db: Db, tripIds: readonly number[]): Promise<Map<number, TripCurrency[]>> {
+	const grouped = new Map<number, TripCurrency[]>();
+	if (tripIds.length === 0) return grouped;
+	const rows = await db
+		.select()
+		.from(tripCurrencies)
+		.where(inArray(tripCurrencies.tripId, [...tripIds]))
+		.orderBy(asc(tripCurrencies.sortOrder), asc(tripCurrencies.id));
+	for (const row of rows) {
+		const list = grouped.get(row.tripId);
+		if (list) list.push(row);
+		else grouped.set(row.tripId, [row]);
+	}
+	return grouped;
 }
+
+export async function getTrip(db: Db, id: number): Promise<TripWithCurrencies | null> {
+	const [row] = await db.select().from(trips).where(eq(trips.id, id)).limit(1);
+	if (!row) return null;
+	const currencies = await listCurrenciesFor(db, [id]);
+	return { ...row, currencies: currencies.get(id) ?? [] };
+}
+
+export type TripCurrencyInput = { code: string; rateToJpy: number };
 
 export type TripInput = {
 	name: string;
 	startDate?: string;
 	endDate?: string;
-	currency: string;
-	rateToJpy: number;
+	/** 円以外に使う通貨。空なら円だけの旅行 */
+	currencies: TripCurrencyInput[];
 	note?: string;
 };
 
@@ -88,13 +118,12 @@ export async function createTrip(db: Db, input: TripInput, createdBy: number): P
 			name: input.name,
 			startDate: input.startDate ?? null,
 			endDate: input.endDate ?? null,
-			currency: input.currency,
-			rateToJpy: input.rateToJpy,
 			note: input.note ?? null,
 			createdBy,
 		})
 		.returning();
 	if (!row) throw new Error("旅行の作成に失敗しました");
+	await replaceTripCurrencies(db, row.id, input.currencies);
 	return row;
 }
 
@@ -105,15 +134,23 @@ export async function updateTrip(db: Db, id: number, input: TripInput): Promise<
 			name: input.name,
 			startDate: input.startDate ?? null,
 			endDate: input.endDate ?? null,
-			currency: input.currency,
-			rateToJpy: input.rateToJpy,
 			note: input.note ?? null,
 			updatedAt: sql`(strftime('%Y-%m-%dT%H:%M:%fZ','now'))`,
 		})
 		.where(eq(trips.id, id));
+	await replaceTripCurrencies(db, id, input.currencies);
 }
 
-/** 旅行を削除する。記録・写真・コメントは外部キーの cascade で消える */
+/** 通貨は行の増減も並べ替えもあるので、まとめて入れ替える */
+async function replaceTripCurrencies(db: Db, tripId: number, currencies: readonly TripCurrencyInput[]): Promise<void> {
+	await db.delete(tripCurrencies).where(eq(tripCurrencies.tripId, tripId));
+	if (currencies.length === 0) return;
+	await db
+		.insert(tripCurrencies)
+		.values(currencies.map((c, i) => ({ tripId, code: c.code, rateToJpy: c.rateToJpy, sortOrder: i })));
+}
+
+/** 旅行を削除する。記録・写真・コメント・通貨は外部キーの cascade で消える */
 export async function deleteTrip(db: Db, id: number): Promise<void> {
 	await db.delete(trips).where(eq(trips.id, id));
 }

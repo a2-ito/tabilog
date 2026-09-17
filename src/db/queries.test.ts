@@ -1,5 +1,5 @@
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
-import { sumAsJpy } from "@/lib/money";
+import { sumAsJpy, toRates } from "@/lib/money";
 import { createTestEnv, type TestEnv } from "@/test/d1";
 import {
 	addPhotos,
@@ -25,7 +25,7 @@ let env: TestEnv;
 const seedUser = (suffix = "") =>
 	upsertUser(env.db, { email: `taro${suffix}@example.com`, name: `太郎${suffix}`, image: null });
 
-const tripInput = { name: "台湾旅行", currency: "TWD", rateToJpy: 4.7 };
+const tripInput = { name: "台湾旅行", currencies: [{ code: "TWD", rateToJpy: 4.7 }] };
 
 afterAll(async () => env?.dispose());
 beforeEach(async () => {
@@ -54,8 +54,9 @@ describe("trips", () => {
 		const trip = await createTrip(env.db, { ...tripInput, startDate: "2026-03-01", note: "初 台北" }, user.id);
 		const found = await getTrip(env.db, trip.id);
 		expect(found?.name).toBe("台湾旅行");
-		expect(found?.currency).toBe("TWD");
-		expect(found?.rateToJpy).toBeCloseTo(4.7);
+		expect(found?.currencies).toHaveLength(1);
+		expect(found?.currencies[0]?.code).toBe("TWD");
+		expect(found?.currencies[0]?.rateToJpy).toBeCloseTo(4.7);
 		expect(found?.createdBy).toBe(user.id);
 	});
 
@@ -81,8 +82,8 @@ describe("trips", () => {
 		expect(summary.entryCount).toBe(3);
 		// 金額のある 2 件だけが合計の対象になる
 		expect(summary.amounts).toEqual([
-			{ minor: 20000, currency: "TWD" },
-			{ minor: 45000, currency: "TWD" },
+			{ minor: 20000, currency: "JPY" },
+			{ minor: 45000, currency: "JPY" },
 		]);
 	});
 
@@ -111,10 +112,10 @@ describe("trips", () => {
 			]),
 		);
 		// 200 TWD = 940 円 + 48,000 円
-		expect(sumAsJpy(summary.amounts, summary.currency, summary.rateToJpy)).toBe(48940);
+		expect(sumAsJpy(summary.amounts, toRates(summary.currencies))).toBe(48940);
 	});
 
-	it("通貨が未設定の古い記録は旅行の通貨として扱う", async () => {
+	it("通貨が未設定の古い記録は円として扱う", async () => {
 		const user = await seedUser();
 		const trip = await createTrip(env.db, tripInput, user.id);
 		await createEntry(
@@ -124,7 +125,42 @@ describe("trips", () => {
 			user.id,
 		);
 		const [summary] = await listTrips(env.db);
-		expect(summary.amounts).toEqual([{ minor: 10000, currency: "TWD" }]);
+		expect(summary.amounts).toEqual([{ minor: 10000, currency: "JPY" }]);
+	});
+
+	it("1 つの旅行に複数の通貨を登録できる", async () => {
+		const user = await seedUser();
+		const trip = await createTrip(
+			env.db,
+			{
+				name: "東南アジア周遊",
+				currencies: [
+					{ code: "THB", rateToJpy: 4.3 },
+					{ code: "VND", rateToJpy: 0.0059 },
+				],
+			},
+			user.id,
+		);
+		const found = await getTrip(env.db, trip.id);
+		// 登録した順のまま返る
+		expect(found?.currencies.map((c) => c.code)).toEqual(["THB", "VND"]);
+
+		await createEntry(
+			env.db,
+			trip.id,
+			{ kind: "food", title: "ガパオ", amountMinor: 12000, amountCurrency: "THB", happenedAt: "2026-03-01T12:00:00Z" },
+			user.id,
+		);
+		await createEntry(
+			env.db,
+			trip.id,
+			{ kind: "food", title: "フォー", amountMinor: 60000, amountCurrency: "VND", happenedAt: "2026-03-05T12:00:00Z" },
+			user.id,
+		);
+
+		const [summary] = await listTrips(env.db);
+		// 120 THB = 516 円 + 60,000 VND = 354 円
+		expect(sumAsJpy(summary.amounts, toRates(summary.currencies))).toBe(870);
 	});
 
 	it("記録が無い旅行も一覧に出る", async () => {
@@ -145,10 +181,12 @@ describe("trips", () => {
 	it("更新できる", async () => {
 		const user = await seedUser();
 		const trip = await createTrip(env.db, tripInput, user.id);
-		await updateTrip(env.db, trip.id, { name: "韓国旅行", currency: "KRW", rateToJpy: 0.11 });
+		await updateTrip(env.db, trip.id, { name: "韓国旅行", currencies: [{ code: "KRW", rateToJpy: 0.11 }] });
 		const found = await getTrip(env.db, trip.id);
 		expect(found?.name).toBe("韓国旅行");
-		expect(found?.rateToJpy).toBeCloseTo(0.11);
+		// 通貨は入れ替わる（TWD は消えて KRW だけになる）
+		expect(found?.currencies.map((c) => c.code)).toEqual(["KRW"]);
+		expect(found?.currencies[0]?.rateToJpy).toBeCloseTo(0.11);
 		expect(found?.startDate).toBeNull();
 	});
 

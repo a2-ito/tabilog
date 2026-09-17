@@ -40,6 +40,7 @@ export async function createTestEnv() {
 				d1.prepare("DELETE FROM comments"),
 				d1.prepare("DELETE FROM entry_photos"),
 				d1.prepare("DELETE FROM entries"),
+				d1.prepare("DELETE FROM trip_currencies"),
 				d1.prepare("DELETE FROM trips"),
 				d1.prepare("DELETE FROM users"),
 				d1.prepare("DELETE FROM sqlite_sequence"),

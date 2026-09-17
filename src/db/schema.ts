@@ -16,16 +16,12 @@ export const users = sqliteTable(
 	(t) => [uniqueIndex("users_email_idx").on(t.email)],
 );
 
-/** 旅行。現地通貨と円換算レートをここで持つ */
+/** 旅行。使う通貨は trip_currencies に持つ（円は常に使えるので入れない） */
 export const trips = sqliteTable("trips", {
 	id: integer("id").primaryKey({ autoIncrement: true }),
 	name: text("name").notNull(),
 	startDate: text("start_date"),
 	endDate: text("end_date"),
-	/** ISO 4217。記録の金額はこの通貨の最小単位で保存する */
-	currency: text("currency").notNull().default("JPY"),
-	/** 現地通貨 1 単位あたりの円。JPY なら 1 */
-	rateToJpy: real("rate_to_jpy").notNull().default(1),
 	note: text("note"),
 	createdBy: integer("created_by")
 		.notNull()
@@ -33,6 +29,27 @@ export const trips = sqliteTable("trips", {
 	createdAt: text("created_at").notNull().default(now),
 	updatedAt: text("updated_at").notNull().default(now),
 });
+
+/**
+ * 旅行で使う現地通貨と円換算レート。1 つの旅行に複数登録できる。
+ * 円は主通貨（レート 1）として常に使えるため、ここには保存しない。
+ */
+export const tripCurrencies = sqliteTable(
+	"trip_currencies",
+	{
+		id: integer("id").primaryKey({ autoIncrement: true }),
+		tripId: integer("trip_id")
+			.notNull()
+			.references(() => trips.id, { onDelete: "cascade" }),
+		/** ISO 4217 の 3 文字（大文字） */
+		code: text("code").notNull(),
+		/** 現地通貨 1 単位あたりの円 */
+		rateToJpy: real("rate_to_jpy").notNull(),
+		/** フォームで並べた順。表示順もこれに従う */
+		sortOrder: integer("sort_order").notNull().default(0),
+	},
+	(t) => [uniqueIndex("trip_currencies_trip_code_idx").on(t.tripId, t.code)],
+);
 
 export const ENTRY_KINDS = ["food", "shopping", "other"] as const;
 export type EntryKind = (typeof ENTRY_KINDS)[number];
@@ -110,6 +127,7 @@ export const comments = sqliteTable(
 
 export type User = typeof users.$inferSelect;
 export type Trip = typeof trips.$inferSelect;
+export type TripCurrency = typeof tripCurrencies.$inferSelect;
 export type Entry = typeof entries.$inferSelect;
 export type EntryPhoto = typeof entryPhotos.$inferSelect;
 export type Comment = typeof comments.$inferSelect;
