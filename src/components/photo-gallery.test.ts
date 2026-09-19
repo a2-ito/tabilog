@@ -21,4 +21,9 @@ describe("写真のビューア", () => {
 	it("ダウンロードはファイル名を指定した download リンクで出す", () => {
 		expect(source).toMatch(/<a href=\{open\.src\} download=\{open\.downloadName\}/);
 	});
+
+	it("先頭以外の写真には「サムネにする」を出す", () => {
+		expect(source).toContain("setCoverPhotoAction");
+		expect(source).toMatch(/index === 0 \? \(/);
+	});
 });

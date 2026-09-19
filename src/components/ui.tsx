@@ -45,6 +45,21 @@ export function LinkButton({ href, children, variant = "secondary" }: { href: st
 	);
 }
 
+/** 目立たせたくない操作（サムネイルの切り替えなど）のボタン */
+export function QuietButton({ children, ...props }: ComponentProps<"button">) {
+	const { pending } = useFormStatus();
+	return (
+		<button
+			type="submit"
+			disabled={pending}
+			className="inline-flex items-center rounded-md border border-zinc-300 px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-60 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
+			{...props}
+		>
+			{children}
+		</button>
+	);
+}
+
 export function FormMessage({ state }: { state: ActionState }) {
 	if (state.error) {
 		return (

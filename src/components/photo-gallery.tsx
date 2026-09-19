@@ -1,8 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { deletePhotoAction } from "@/app/actions/entries";
-import { ConfirmForm, DangerButton } from "./ui";
+import { deletePhotoAction, setCoverPhotoAction } from "@/app/actions/entries";
+import { ConfirmForm, DangerButton, QuietButton } from "./ui";
 
 /** 表示に必要なものだけ。URL とダウンロード名はサーバ側で作って渡す */
 export type GalleryPhoto = { id: number; src: string; downloadName: string };
@@ -58,10 +58,23 @@ export function PhotoGallery({ photos }: { photos: GalleryPhoto[] }) {
 								className="aspect-square w-full rounded-md border border-zinc-200 object-cover dark:border-zinc-700"
 							/>
 						</button>
-						<ConfirmForm action={deletePhotoAction} message="この写真を削除しますか？">
-							<input type="hidden" name="id" value={photo.id} />
-							<DangerButton>写真を削除</DangerButton>
-						</ConfirmForm>
+						<div className="flex flex-wrap items-center gap-2">
+							{/* 一覧のサムネイルは並び順の先頭。今どれが使われているかも見せる */}
+							{index === 0 ? (
+								<span className="rounded-md border border-sky-300 bg-sky-50 px-2 py-1 text-xs font-medium text-sky-700 dark:border-sky-800 dark:bg-sky-950 dark:text-sky-300">
+									サムネイル
+								</span>
+							) : (
+								<form action={setCoverPhotoAction}>
+									<input type="hidden" name="id" value={photo.id} />
+									<QuietButton>サムネにする</QuietButton>
+								</form>
+							)}
+							<ConfirmForm action={deletePhotoAction} message="この写真を削除しますか？">
+								<input type="hidden" name="id" value={photo.id} />
+								<DangerButton>写真を削除</DangerButton>
+							</ConfirmForm>
+						</div>
 					</div>
 				))}
 			</div>

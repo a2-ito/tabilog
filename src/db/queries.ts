@@ -316,6 +316,26 @@ export async function getPhoto(db: Db, id: number): Promise<EntryPhoto | null> {
 	return row ?? null;
 }
 
+/**
+ * 指定した写真を先頭に移し、一覧のサムネイルにする。
+ * 並び順は 0 から振り直す（削除を繰り返しても値が離れていかない）。
+ */
+export async function setCoverPhoto(db: Db, id: number): Promise<void> {
+	const photo = await getPhoto(db, id);
+	if (!photo) return;
+
+	const rows = await db
+		.select({ id: entryPhotos.id })
+		.from(entryPhotos)
+		.where(eq(entryPhotos.entryId, photo.entryId))
+		.orderBy(asc(entryPhotos.sortOrder), asc(entryPhotos.id));
+
+	const ordered = [id, ...rows.map((r) => r.id).filter((rowId) => rowId !== id)];
+	for (const [index, photoId] of ordered.entries()) {
+		await db.update(entryPhotos).set({ sortOrder: index }).where(eq(entryPhotos.id, photoId));
+	}
+}
+
 export async function deletePhoto(db: Db, id: number): Promise<void> {
 	await db.delete(entryPhotos).where(eq(entryPhotos.id, id));
 }
