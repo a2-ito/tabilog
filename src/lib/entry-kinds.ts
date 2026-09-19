@@ -23,6 +23,13 @@ export function isEntryKind(value: string): value is EntryKind {
 	return (ENTRY_KINDS as readonly string[]).includes(value);
 }
 
+/** 絵文字だけが欲しい場面（写真の無いカードの代わりの絵など）のために取り出す */
+export function entryKindEmoji(kind: string): string {
+	const [emoji] = entryKindLabel(kind).split(" ");
+	// 知らない種別はラベルがそのまま返るので、絵文字が無ければ既定の印にする
+	return isEntryKind(kind) && emoji ? emoji : "📌";
+}
+
 /** 知らない種別（古いデータなど）はそのまま出して、表示が消えないようにする */
 export function entryKindLabel(kind: string): string {
 	return isEntryKind(kind) ? LABELS[kind] : kind;
