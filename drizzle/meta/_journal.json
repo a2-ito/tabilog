@@ -29,6 +29,13 @@
       "when": 1789657760402,
       "tag": "0003_outstanding_guardsmen",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1789794078237,
+      "tag": "0004_silent_alice",
+      "breakpoints": true
     }
   ]
 }

@@ -66,6 +66,8 @@ export const entries = sqliteTable(
 		kind: text("kind").notNull().default("food"),
 		title: text("title").notNull(),
 		place: text("place"),
+		/** 場所を地図で開くための Google マップ URL（任意）。src/lib/map-url.ts で検証してから入れる */
+		mapUrl: text("map_url"),
 		/** amountCurrency の最小単位での金額。未入力なら null */
 		amountMinor: integer("amount_minor"),
 		/**

@@ -242,6 +242,7 @@ export type EntryInput = {
 	kind: string;
 	title: string;
 	place?: string;
+	mapUrl?: string;
 	amountMinor?: number;
 	amountCurrency?: string;
 	rating?: number;
@@ -257,6 +258,7 @@ export async function createEntry(db: Db, tripId: number, input: EntryInput, aut
 			kind: input.kind,
 			title: input.title,
 			place: input.place ?? null,
+			mapUrl: input.mapUrl ?? null,
 			amountMinor: input.amountMinor ?? null,
 			amountCurrency: input.amountCurrency ?? null,
 			rating: input.rating ?? null,
@@ -276,6 +278,7 @@ export async function updateEntry(db: Db, id: number, input: EntryInput): Promis
 			kind: input.kind,
 			title: input.title,
 			place: input.place ?? null,
+			mapUrl: input.mapUrl ?? null,
 			amountMinor: input.amountMinor ?? null,
 			amountCurrency: input.amountCurrency ?? null,
 			rating: input.rating ?? null,
