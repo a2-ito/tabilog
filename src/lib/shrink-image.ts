@@ -9,8 +9,16 @@
  * - canvas も使い終わりに 0x0 にして中身を手放す
  * - 複数枚は同時ではなく 1 枚ずつ処理する
  *
- * を守る。DOM を直接触らないよう依存は引数で受け取り、テストできるようにしている。
+ * を守る。
+ *
+ * また、縮小に失敗したときに原本をそのまま送ると、サーバの上限に当たって
+ * 分かりにくい形で失敗する（実際にスマホで起きた）。小さい設定で順に
+ * 試し、それでも収まらなければ「どの写真がなぜ駄目か」を伝える。
+ *
+ * DOM を直接触らないよう依存は引数で受け取り、テストできるようにしている。
  */
+
+import { formatBytes, MAX_PHOTO_BYTES } from "./photo-limits";
 
 /** 縮小後の長辺（px） */
 export const MAX_EDGE = 1600;
@@ -18,6 +26,13 @@ export const MAX_EDGE = 1600;
 export const JPEG_QUALITY = 0.85;
 /** これより小さく、かつ縮小も要らない画像はそのまま送る */
 export const SKIP_BYTES = 500 * 1024;
+
+/** 上から順に試す縮小設定。前の設定で上限に収まらなければ次を試す */
+export const SHRINK_ATTEMPTS = [
+	{ maxEdge: MAX_EDGE, quality: JPEG_QUALITY },
+	{ maxEdge: 1200, quality: 0.75 },
+	{ maxEdge: 800, quality: 0.7 },
+] as const;
 
 export type ImageBitmapLike = {
 	readonly width: number;
@@ -41,7 +56,18 @@ export type ShrinkDeps = {
 	createCanvas: () => CanvasLike;
 };
 
-/** 長辺を MAX_EDGE に収める倍率。すでに収まっていれば 1 */
+/** 縮小できなかった写真。どれが駄目かを画面に出すため名前を持つ */
+export class PhotoShrinkError extends Error {
+	constructor(
+		readonly fileName: string,
+		message: string,
+	) {
+		super(message);
+		this.name = "PhotoShrinkError";
+	}
+}
+
+/** 長辺を maxEdge に収める倍率。すでに収まっていれば 1 */
 export function scaleFor(width: number, height: number, maxEdge: number = MAX_EDGE): number {
 	const longest = Math.max(width, height);
 	if (longest <= 0) return 1;
@@ -57,36 +83,27 @@ function toJpegName(name: string): string {
 	return `${name.replace(/\.[^.]+$/, "")}.jpg`;
 }
 
-/**
- * 1 枚を縮小する。縮小できない場合は元のファイルをそのまま返す。
- * 途中で失敗しても ImageBitmap と canvas は必ず解放する。
- */
-export async function shrinkImage(file: File, deps: ShrinkDeps): Promise<File> {
-	if (shouldSkip(file)) return file;
-
-	let bitmap: ImageBitmapLike | null = null;
+/** 1 回ぶんの描き出し。失敗したら null を返す */
+async function renderOnce(
+	bitmap: ImageBitmapLike,
+	deps: ShrinkDeps,
+	attempt: { maxEdge: number; quality: number },
+): Promise<Blob | null> {
 	let canvas: CanvasLike | null = null;
 	try {
-		bitmap = await deps.createImageBitmap(file);
-		const scale = scaleFor(bitmap.width, bitmap.height);
-		// 縮小の必要が無く、もともと軽い画像は再エンコードするだけ無駄
-		if (scale === 1 && file.size < SKIP_BYTES) return file;
-
+		const scale = scaleFor(bitmap.width, bitmap.height, attempt.maxEdge);
 		canvas = deps.createCanvas();
 		canvas.width = Math.round(bitmap.width * scale);
 		canvas.height = Math.round(bitmap.height * scale);
 		const ctx = canvas.getContext("2d");
-		if (!ctx) return file;
+		if (!ctx) return null;
 		ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-
-		const blob = await new Promise<Blob | null>((resolve) =>
-			(canvas as CanvasLike).toBlob(resolve, "image/jpeg", JPEG_QUALITY),
-		);
-		if (!blob) return file;
-		return new File([blob], toJpegName(file.name), { type: "image/jpeg" });
+		const target = canvas;
+		return await new Promise<Blob | null>((resolve) => target.toBlob(resolve, "image/jpeg", attempt.quality));
+	} catch {
+		// 大きすぎる画像では canvas の確保自体が失敗する。次の設定に任せる
+		return null;
 	} finally {
-		// デコード済みの画素はここで手放す。GC を待つと次の 1 枚と重なって落ちる
-		bitmap?.close();
 		if (canvas) {
 			canvas.width = 0;
 			canvas.height = 0;
@@ -95,15 +112,83 @@ export async function shrinkImage(file: File, deps: ShrinkDeps): Promise<File> {
 }
 
 /**
+ * 1 枚を上限に収まるまで縮小する。
+ * 収められない場合は PhotoShrinkError を投げる（原本を黙って送らない）。
+ */
+export async function shrinkImage(
+	file: File,
+	deps: ShrinkDeps,
+	limitBytes: number = MAX_PHOTO_BYTES,
+): Promise<File> {
+	if (shouldSkip(file)) {
+		if (file.size > limitBytes) {
+			throw new PhotoShrinkError(
+				file.name,
+				`「${file.name}」は ${formatBytes(file.size)} あり、この形式では縮小できません（上限 ${formatBytes(limitBytes)}）`,
+			);
+		}
+		return file;
+	}
+
+	let bitmap: ImageBitmapLike | null = null;
+	try {
+		try {
+			bitmap = await deps.createImageBitmap(file);
+		} catch {
+			throw new PhotoShrinkError(
+				file.name,
+				`「${file.name}」を読み込めませんでした。写真アプリで小さくしてからお試しください`,
+			);
+		}
+
+		// 縮小の必要が無く、もともと軽い画像は再エンコードするだけ無駄
+		if (scaleFor(bitmap.width, bitmap.height) === 1 && file.size < SKIP_BYTES) return file;
+
+		for (const attempt of SHRINK_ATTEMPTS) {
+			const blob = await renderOnce(bitmap, deps, attempt);
+			if (blob && blob.size <= limitBytes) {
+				return new File([blob], toJpegName(file.name), { type: "image/jpeg" });
+			}
+		}
+
+		throw new PhotoShrinkError(
+			file.name,
+			`「${file.name}」は縮小できませんでした。写真アプリでサイズを小さくしてからお試しください`,
+		);
+	} finally {
+		// デコード済みの画素はここで手放す。GC を待つと次の 1 枚と重なって落ちる
+		bitmap?.close();
+	}
+}
+
+export type ShrinkResult = {
+	/** 送信できる状態になった写真 */
+	files: File[];
+	/** 取り込めなかった写真の理由。画面にそのまま出す */
+	errors: string[];
+};
+
+/**
  * 複数枚を縮小する。
  * Promise.all にすると枚数分のメモリが同時に乗るので、必ず 1 枚ずつ処理する。
+ * 1 枚が駄目でも残りは取り込む。
  */
-export async function shrinkAll(files: readonly File[], deps: ShrinkDeps): Promise<File[]> {
-	const shrunk: File[] = [];
+export async function shrinkAll(
+	files: readonly File[],
+	deps: ShrinkDeps,
+	limitBytes: number = MAX_PHOTO_BYTES,
+): Promise<ShrinkResult> {
+	const result: ShrinkResult = { files: [], errors: [] };
 	for (const file of files) {
-		shrunk.push(await shrinkImage(file, deps));
+		try {
+			result.files.push(await shrinkImage(file, deps, limitBytes));
+		} catch (err) {
+			result.errors.push(
+				err instanceof PhotoShrinkError ? err.message : `「${file.name}」を取り込めませんでした`,
+			);
+		}
 	}
-	return shrunk;
+	return result;
 }
 
 /** ブラウザ上での実際の依存 */

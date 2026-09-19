@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
+import { MAX_PHOTO_BYTES } from "./photo-limits";
 import {
 	type CanvasLike,
 	type ImageBitmapLike,
 	MAX_EDGE,
+	PhotoShrinkError,
 	scaleFor,
 	type ShrinkDeps,
 	shouldSkip,
@@ -116,7 +118,7 @@ describe("shrinkImage", () => {
 		expect(state.openBitmaps).toBe(0);
 	});
 
-	it("途中で失敗しても ImageBitmap を解放する", async () => {
+	it("canvas を作れない端末でも ImageBitmap を解放し、理由を伝える", async () => {
 		const { deps, state } = fakeDeps();
 		const failing: ShrinkDeps = {
 			...deps,
@@ -124,15 +126,49 @@ describe("shrinkImage", () => {
 				throw new Error("canvas を作れません");
 			},
 		};
-		await expect(shrinkImage(fakeFile(), failing)).rejects.toThrow(/canvas/);
+		await expect(shrinkImage(fakeFile("big.jpg"), failing)).rejects.toBeInstanceOf(PhotoShrinkError);
 		expect(state.openBitmaps).toBe(0);
 		expect(state.closedBitmaps).toBe(1);
+	});
+
+	it("画像を読み込めない場合はどの写真か分かるエラーにする", async () => {
+		const { deps } = fakeDeps();
+		const failing: ShrinkDeps = {
+			...deps,
+			createImageBitmap: () => Promise.reject(new Error("decode error")),
+		};
+		await expect(shrinkImage(fakeFile("IMG_9999.jpg"), failing)).rejects.toThrow(/IMG_9999\.jpg/);
 	});
 
 	it("使い終わった canvas を 0x0 にして中身を手放す", async () => {
 		const helper = fakeDeps();
 		await shrinkImage(fakeFile(), helper.deps);
 		expect(helper.collectReleased()).toEqual([{ width: 0, height: 0 }]);
+	});
+
+	it("1 回目で上限に収まらなければ、より小さい設定で試す", async () => {
+		// 1 回目だけ上限を超える blob を返す
+		let call = 0;
+		const helper = fakeDeps();
+		const deps: ShrinkDeps = {
+			...helper.deps,
+			createCanvas: () => {
+				const canvas = helper.deps.createCanvas();
+				return {
+					...canvas,
+					getContext: canvas.getContext.bind(canvas),
+					toBlob: (cb) => {
+						call += 1;
+						const size = call === 1 ? MAX_PHOTO_BYTES + 1 : 1024;
+						cb(new Blob([new Uint8Array(size)], { type: "image/jpeg" }));
+					},
+				};
+			},
+		};
+
+		const out = await shrinkImage(fakeFile("huge.jpg"), deps);
+		expect(call).toBe(2);
+		expect(out.size).toBe(1024);
 	});
 
 	it("小さくて縮小の要らない画像はそのまま返す", async () => {
@@ -144,17 +180,28 @@ describe("shrinkImage", () => {
 		expect(state.closedBitmaps).toBe(1);
 	});
 
-	it("toBlob が失敗したら元のファイルを返す", async () => {
+	it("縮小しきれなければ原本を送らずエラーにする", async () => {
+		// 原本をそのまま送るとサーバの上限に当たり、分かりにくい失敗になる
 		const { deps } = fakeDeps({ blob: null });
-		const file = fakeFile();
-		expect(await shrinkImage(file, deps)).toBe(file);
+		await expect(shrinkImage(fakeFile("huge.jpg"), deps)).rejects.toBeInstanceOf(PhotoShrinkError);
 	});
 
-	it("2D コンテキストが取れなければ元のファイルを返す", async () => {
+	it("2D コンテキストが取れない端末でもエラーにし、ImageBitmap は解放する", async () => {
 		const { deps, state } = fakeDeps({ noContext: true });
-		const file = fakeFile();
-		expect(await shrinkImage(file, deps)).toBe(file);
+		await expect(shrinkImage(fakeFile("huge.jpg"), deps)).rejects.toThrow(/huge\.jpg/);
 		expect(state.closedBitmaps).toBe(1);
+	});
+
+	it("縮小できない形式（GIF）が上限を超えていたらエラーにする", async () => {
+		const { deps } = fakeDeps();
+		const big = fakeFile("anime.gif", "image/gif", MAX_PHOTO_BYTES + 1);
+		await expect(shrinkImage(big, deps)).rejects.toThrow(/anime\.gif/);
+	});
+
+	it("上限内の GIF はそのまま通す", async () => {
+		const { deps } = fakeDeps();
+		const gif = fakeFile("anime.gif", "image/gif", 1024);
+		expect(await shrinkImage(gif, deps)).toBe(gif);
 	});
 });
 
@@ -165,7 +212,8 @@ describe("shrinkAll", () => {
 
 		const out = await shrinkAll(files, deps);
 
-		expect(out).toHaveLength(3);
+		expect(out.files).toHaveLength(3);
+		expect(out.errors).toEqual([]);
 		// ここが 2 以上になると、端末のメモリを同時に食って 2 枚目で落ちる
 		expect(state.maxOpenBitmaps).toBe(1);
 		expect(state.closedBitmaps).toBe(3);
@@ -173,7 +221,24 @@ describe("shrinkAll", () => {
 
 	it("空なら何もしない", async () => {
 		const { deps, state } = fakeDeps();
-		expect(await shrinkAll([], deps)).toEqual([]);
+		expect(await shrinkAll([], deps)).toEqual({ files: [], errors: [] });
 		expect(state.closedBitmaps).toBe(0);
+	});
+
+	it("1 枚が駄目でも残りは取り込む", async () => {
+		const helper = fakeDeps();
+		const deps: ShrinkDeps = {
+			...helper.deps,
+			createImageBitmap: (file: File) =>
+				file.name === "broken.jpg"
+					? Promise.reject(new Error("decode error"))
+					: helper.deps.createImageBitmap(file),
+		};
+
+		const out = await shrinkAll([fakeFile("ok1.jpg"), fakeFile("broken.jpg"), fakeFile("ok2.jpg")], deps);
+
+		expect(out.files.map((f) => f.name)).toEqual(["ok1.jpg", "ok2.jpg"]);
+		expect(out.errors).toHaveLength(1);
+		expect(out.errors[0]).toMatch(/broken\.jpg/);
 	});
 });

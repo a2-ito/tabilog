@@ -47,17 +47,23 @@ export function PhotoInput({ name }: { name: string }) {
 		setError(null);
 		setNotice(null);
 		try {
-			// 1 枚ずつ縮小する。まとめて処理すると端末のメモリを食い潰して落ちる
+			// 1 枚ずつ縮小する。まとめて処理すると端末のメモリを食い潰して落ちる。
+			// 縮小できなかった写真は取り込まず、理由を画面に出す
 			const shrunk = await shrinkAll(files, browserShrinkDeps);
+			if (shrunk.errors.length > 0) setError(shrunk.errors.join(" / "));
+			if (shrunk.files.length === 0) return;
+
 			setPicked((current) => {
 				const room = MAX_FILES - current.length;
 				if (room <= 0) {
 					setError(`写真は ${MAX_FILES} 枚までです`);
 					return current;
 				}
-				if (shrunk.length > room) setError(`写真は ${MAX_FILES} 枚までなので、${room} 枚だけ追加しました`);
-				const added = shrunk.slice(0, room).map((file) => ({ file, url: URL.createObjectURL(file) }));
-				if (source === "paste") setNotice(`貼り付けた画像を ${added.length} 枚追加しました`);
+				if (shrunk.files.length > room) setError(`写真は ${MAX_FILES} 枚までなので、${room} 枚だけ追加しました`);
+				const added = shrunk.files.slice(0, room).map((file) => ({ file, url: URL.createObjectURL(file) }));
+				if (source === "paste" && shrunk.errors.length === 0) {
+					setNotice(`貼り付けた画像を ${added.length} 枚追加しました`);
+				}
 				return [...current, ...added];
 			});
 		} catch (err) {

@@ -1,8 +1,5 @@
 import { getEnv } from "./cloudflare";
-
-const MAX_PHOTO_BYTES = 5 * 1024 * 1024;
-const MAX_PHOTOS_PER_ENTRY = 8;
-const ALLOWED_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
+import { isAllowedPhotoType, MAX_PHOTO_BYTES, MAX_PHOTOS_PER_ENTRY } from "./photo-limits";
 
 export const PHOTO_LIMITS = { maxBytes: MAX_PHOTO_BYTES, maxCount: MAX_PHOTOS_PER_ENTRY } as const;
 
@@ -29,7 +26,7 @@ export async function storePhotos(files: readonly File[], tripId: number): Promi
 		throw new Error(`写真は一度に ${MAX_PHOTOS_PER_ENTRY} 枚までです`);
 	}
 	for (const file of targets) {
-		if (!ALLOWED_TYPES.has(file.type)) throw new Error(`対応していない画像形式です: ${file.type || "不明"}`);
+		if (!isAllowedPhotoType(file.type)) throw new Error(`対応していない画像形式です: ${file.type || "不明"}`);
 		if (file.size > MAX_PHOTO_BYTES) throw new Error("画像サイズは 5MB 以下にしてください");
 	}
 
