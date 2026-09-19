@@ -2,30 +2,10 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { extractImageFiles, namePastedImage } from "@/lib/clipboard";
+import { browserShrinkDeps, MAX_EDGE, shrinkAll } from "@/lib/shrink-image";
 import { inputClass } from "./ui";
 
-const MAX_EDGE = 1600;
-const JPEG_QUALITY = 0.85;
 const MAX_FILES = 8;
-
-/** スマホ写真をそのまま送らず、長辺 1600px の JPEG に縮小してからアップロードする */
-async function shrinkImage(file: File): Promise<File> {
-	if (!file.type.startsWith("image/") || file.type === "image/gif") return file;
-	const bitmap = await createImageBitmap(file);
-	const scale = Math.min(1, MAX_EDGE / Math.max(bitmap.width, bitmap.height));
-	if (scale === 1 && file.size < 500 * 1024) return file;
-
-	const canvas = document.createElement("canvas");
-	canvas.width = Math.round(bitmap.width * scale);
-	canvas.height = Math.round(bitmap.height * scale);
-	const ctx = canvas.getContext("2d");
-	if (!ctx) return file;
-	ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-
-	const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", JPEG_QUALITY));
-	if (!blob) return file;
-	return new File([blob], `${file.name.replace(/\.[^.]+$/, "")}.jpg`, { type: "image/jpeg" });
-}
 
 type Picked = { file: File; url: string };
 
@@ -67,7 +47,8 @@ export function PhotoInput({ name }: { name: string }) {
 		setError(null);
 		setNotice(null);
 		try {
-			const shrunk = await Promise.all(files.map(shrinkImage));
+			// 1 枚ずつ縮小する。まとめて処理すると端末のメモリを食い潰して落ちる
+			const shrunk = await shrinkAll(files, browserShrinkDeps);
 			setPicked((current) => {
 				const room = MAX_FILES - current.length;
 				if (room <= 0) {
