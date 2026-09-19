@@ -18,6 +18,25 @@ export function Field({ label, children, hint }: { label: string; children: Reac
 	);
 }
 
+/**
+ * 処理中であることを示すぐるぐる。
+ * 文字と並べて使うので、読み上げは文字側に任せて図形は隠す。
+ */
+export function Spinner({ className = "" }: { className?: string }) {
+	return (
+		<svg
+			className={`h-4 w-4 animate-spin ${className}`}
+			viewBox="0 0 24 24"
+			fill="none"
+			aria-hidden="true"
+			focusable="false"
+		>
+			<circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+			<path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 0 1 8-8v4a4 4 0 0 0-4 4H4z" />
+		</svg>
+	);
+}
+
 export function SubmitButton({ children, pendingText = "送信中…", ...props }: ComponentProps<"button"> & { pendingText?: string }) {
 	const { pending } = useFormStatus();
 	return (
@@ -27,7 +46,14 @@ export function SubmitButton({ children, pendingText = "送信中…", ...props 
 			className="inline-flex items-center justify-center rounded-md bg-sky-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-60"
 			{...props}
 		>
-			{pending ? pendingText : children}
+			{pending ? (
+				<>
+					<Spinner className="mr-2" />
+					{pendingText}
+				</>
+			) : (
+				children
+			)}
 		</button>
 	);
 }
@@ -55,6 +81,7 @@ export function QuietButton({ children, ...props }: ComponentProps<"button">) {
 			className="inline-flex items-center rounded-md border border-zinc-300 px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-60 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
 			{...props}
 		>
+			{pending && <Spinner className="mr-2" />}
 			{children}
 		</button>
 	);
@@ -112,6 +139,7 @@ export function DangerButton({ children, ...props }: ComponentProps<"button">) {
 			className="inline-flex items-center rounded-md border border-red-300 px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-60 dark:border-red-800 dark:text-red-300 dark:hover:bg-red-950"
 			{...props}
 		>
+			{pending && <Spinner className="mr-2" />}
 			{children}
 		</button>
 	);

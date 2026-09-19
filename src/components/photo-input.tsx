@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { extractImageFiles, namePastedImage } from "@/lib/clipboard";
 import { browserShrinkDeps, MAX_EDGE, shrinkAll } from "@/lib/shrink-image";
-import { inputClass } from "./ui";
+import { inputClass, Spinner } from "./ui";
 
 const MAX_FILES = 8;
 
@@ -133,7 +133,12 @@ export function PhotoInput({ name }: { name: string }) {
 			<p className="text-xs text-zinc-500">
 				最大 {MAX_FILES} 枚。画像をコピーして、この画面で貼り付けても追加できます（送信前に長辺 {MAX_EDGE}px へ縮小）
 			</p>
-			{busy && <p className="text-xs text-zinc-500">写真を取り込み中…</p>}
+			{busy && (
+				<p className="flex items-center gap-2 text-xs text-zinc-500">
+					<Spinner className="h-3.5 w-3.5" />
+					写真を取り込み中…
+				</p>
+			)}
 			{notice && <p className="text-xs text-sky-700 dark:text-sky-400">{notice}</p>}
 			{error && (
 				<p role="alert" className="text-xs text-red-700 dark:text-red-300">
