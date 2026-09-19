@@ -7,7 +7,7 @@ import { getTrip, listEntries } from "@/db/queries";
 import { requireUser } from "@/lib/auth";
 import { formatDateRange, formatWallClock } from "@/lib/datetime";
 import { ENTRY_KIND_OPTIONS, entryKindLabel, isEntryKind } from "@/lib/entry-kinds";
-import { DEFAULT_CURRENCY, formatJpy, formatMoney, sumAsJpy, sumByCurrency, toRates } from "@/lib/money";
+import { amountToJpy, DEFAULT_CURRENCY, formatJpy, formatMoney, needsJpyConversion, sumAsJpy, sumByCurrency, toRates } from "@/lib/money";
 import { photoUrl } from "@/lib/photos";
 
 const FILTERS = [{ key: "", label: "すべて" }, ...ENTRY_KIND_OPTIONS.map((k) => ({ key: k.value, label: k.label }))];
@@ -135,27 +135,40 @@ export default async function TripPage({ params, searchParams }: PageProps<"/tri
 									/>
 								)}
 								<div className="min-w-0 flex-1 space-y-1">
-									<div className="flex flex-wrap items-baseline justify-between gap-2">
-										<h2 className="font-semibold">
-											<span className="mr-1 text-xs text-zinc-500">{entryKindLabel(entry.kind)}</span>
-											{entry.title}
-										</h2>
-										{entry.amountMinor != null && (
-											<span className="text-sm font-medium">
-												{formatMoney(entry.amountMinor, entry.amountCurrency ?? DEFAULT_CURRENCY)}
-											</span>
-										)}
-									</div>
+									<h2 className="font-semibold">
+										<span className="mr-1 text-xs text-zinc-500">{entryKindLabel(entry.kind)}</span>
+										{entry.title}
+									</h2>
 									<p className="flex flex-wrap items-center gap-x-2 text-xs text-zinc-500">
 										<span>{formatWallClock(entry.happenedAt)}</span>
-										{entry.place && <span>・{entry.place}</span>}
 										<Rating value={entry.rating} />
 										{entry.commentCount > 0 && <span>💬 {entry.commentCount}</span>}
 									</p>
+									{/* 日時と混ざって読みにくかったので、店名は独立した行にする */}
+									{entry.place && (
+										<p className="flex items-center gap-1 text-xs text-zinc-500">
+											<span aria-hidden="true">📍</span>
+											<span className="truncate">{entry.place}</span>
+										</p>
+									)}
 									{entry.note && (
 										<p className="line-clamp-2 text-sm text-zinc-600 dark:text-zinc-400">{entry.note}</p>
 									)}
 								</div>
+								{/* 金額は右上に固定する。行に混ぜると題名の長さで位置が動く */}
+								{entry.amountMinor != null && (
+									<div className="shrink-0 text-right">
+										<p className="text-sm font-medium">
+											{formatMoney(entry.amountMinor, entry.amountCurrency ?? DEFAULT_CURRENCY)}
+										</p>
+										{/* 現地通貨で入れた記録にも円を添える。円で入れた記録は上の行がそのまま円 */}
+										{needsJpyConversion(entry.amountCurrency ?? DEFAULT_CURRENCY) && (
+											<p className="text-xs text-zinc-500">
+												約 {formatJpy(amountToJpy({ minor: entry.amountMinor, currency: entry.amountCurrency ?? DEFAULT_CURRENCY }, rates))}
+											</p>
+										)}
+									</div>
+								)}
 							</Link>
 						</li>
 					))}
