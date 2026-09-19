@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import { MAX_PHOTO_BYTES } from "./photo-limits";
 import {
 	type CanvasLike,
+	decodeOptionsFor,
+	type DecodeOptions,
 	type ImageBitmapLike,
 	MAX_EDGE,
 	PhotoShrinkError,
@@ -17,6 +19,8 @@ function fakeDeps(options: { width?: number; height?: number; blob?: Blob | null
 	const { width = 4000, height = 3000, blob = new Blob([new Uint8Array(10)], { type: "image/jpeg" }) } = options;
 
 	const state = {
+		/** createImageBitmap に渡されたデコード指定 */
+		decodeCalls: [] as (DecodeOptions | undefined)[],
 		/** 同時に開いている ImageBitmap の数 */
 		openBitmaps: 0,
 		/** 同時に開いた最大数。1 を超えたら複数枚を同時に持っている */
@@ -31,12 +35,16 @@ function fakeDeps(options: { width?: number; height?: number; blob?: Blob | null
 	const canvases: CanvasLike[] = [];
 
 	const deps: ShrinkDeps = {
-		createImageBitmap: async (): Promise<ImageBitmapLike> => {
+		createImageBitmap: async (_file: File, opts?: DecodeOptions): Promise<ImageBitmapLike> => {
+			state.decodeCalls.push(opts);
 			state.openBitmaps += 1;
 			state.maxOpenBitmaps = Math.max(state.maxOpenBitmaps, state.openBitmaps);
+			// ブラウザと同じく、指定されたぶんだけ縮小してデコードしたことにする
+			const decodedWidth = opts?.resizeWidth ?? (opts?.resizeHeight ? Math.round((width * opts.resizeHeight) / height) : width);
+			const decodedHeight = opts?.resizeHeight ?? (opts?.resizeWidth ? Math.round((height * opts.resizeWidth) / width) : height);
 			return {
-				width,
-				height,
+				width: decodedWidth,
+				height: decodedHeight,
 				close() {
 					state.openBitmaps -= 1;
 					state.closedBitmaps += 1;
@@ -240,5 +248,56 @@ describe("shrinkAll", () => {
 		expect(out.files.map((f) => f.name)).toEqual(["ok1.jpg", "ok2.jpg"]);
 		expect(out.errors).toHaveLength(1);
 		expect(out.errors[0]).toMatch(/broken\.jpg/);
+	});
+});
+
+describe("decodeOptionsFor", () => {
+	it("長辺が 1600px になるようデコード時に縮小させる", () => {
+		// 実際に問題になった Ultra HDR の写真（3072x4080・12.5MB）
+		expect(decodeOptionsFor({ width: 3072, height: 4080 })).toEqual({
+			resizeWidth: 1205,
+			resizeHeight: 1600,
+			resizeQuality: "high",
+		});
+	});
+
+	it("すでに小さい画像は縮小指定を付けない", () => {
+		expect(decodeOptionsFor({ width: 800, height: 600 })).toEqual({ resizeQuality: "high" });
+	});
+
+	it("寸法が読めない大きいファイルは幅だけ抑える", () => {
+		expect(decodeOptionsFor(null, 12 * 1024 * 1024)).toEqual({ resizeWidth: MAX_EDGE, resizeQuality: "high" });
+	});
+
+	it("寸法が読めない軽いファイルはそのままデコードする", () => {
+		expect(decodeOptionsFor(null, 10 * 1024)).toEqual({ resizeQuality: "high" });
+	});
+});
+
+describe("大きな写真を原寸でデコードしない", () => {
+	/** SOF0 だけを持つ JPEG のヘッダ。寸法を読ませるために使う */
+	function jpegHeader(width: number, height: number): Uint8Array<ArrayBuffer> {
+		return Uint8Array.from([
+			0xff, 0xd8, 0xff, 0xc0, 0x00, 0x11, 0x08,
+			(height >> 8) & 0xff, height & 0xff,
+			(width >> 8) & 0xff, width & 0xff,
+			0x03, 0, 0, 0, 0, 0, 0,
+		]);
+	}
+
+	it("12.5MB / 3072x4080 の写真でもデコードは長辺 1600px に抑える", async () => {
+		const { deps, state } = fakeDeps({ width: 3072, height: 4080 });
+		// ヘッダ + 本体。原寸デコードすると 50MB 前後を確保してタブごと落ちる
+		const file = new File([jpegHeader(3072, 4080), new Uint8Array(1024 * 1024)], "PXL_0001.jpg", {
+			type: "image/jpeg",
+		});
+
+		const out = await shrinkImage(file, deps);
+
+		expect(state.decodeCalls[0]).toEqual({ resizeWidth: 1205, resizeHeight: 1600, resizeQuality: "high" });
+		// デコード後の画像をさらに canvas で縮める必要はない
+		expect(state.drawnSizes[0]).toEqual({ width: 1205, height: 1600 });
+		expect(out.name).toBe("PXL_0001.jpg");
+		expect(state.closedBitmaps).toBe(1);
 	});
 });
