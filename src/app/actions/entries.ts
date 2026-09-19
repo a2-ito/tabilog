@@ -12,6 +12,7 @@ import {
 	getEntry,
 	getPhoto,
 	getTrip,
+	setCoverPhoto,
 	listEntryPhotoKeys,
 	updateEntry,
 } from "@/db/queries";
@@ -128,6 +129,25 @@ export async function deleteEntryAction(formData: FormData): Promise<void> {
 	revalidatePath("/");
 	revalidatePath(`/trips/${tripId.data}`);
 	redirect(`/trips/${tripId.data}`);
+}
+
+/** 一覧に出すサムネイルを、この写真に差し替える */
+export async function setCoverPhotoAction(formData: FormData): Promise<void> {
+	await requireUser();
+	const id = idFromForm.safeParse(formData.get("id"));
+	if (!id.success) throw new Error("写真 ID が不正です");
+
+	const db = await getDb();
+	const photo = await getPhoto(db, id.data);
+	if (!photo) return;
+	await setCoverPhoto(db, photo.id);
+
+	const entry = await getEntry(db, photo.entryId);
+	if (entry) {
+		revalidatePath("/");
+		revalidatePath(`/trips/${entry.tripId}`);
+		revalidatePath(`/trips/${entry.tripId}/entries/${entry.id}`);
+	}
 }
 
 export async function deletePhotoAction(formData: FormData): Promise<void> {

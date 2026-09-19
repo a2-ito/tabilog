@@ -3,6 +3,7 @@ import { sumAsJpy, toRates } from "@/lib/money";
 import { createTestEnv, type TestEnv } from "@/test/d1";
 import {
 	addPhotos,
+	setCoverPhoto,
 	createComment,
 	createEntry,
 	createTrip,
@@ -246,6 +247,49 @@ describe("entries", () => {
 			["photos/1.jpg", 0],
 			["photos/2.jpg", 1],
 		]);
+	});
+
+	it("サムネイルにした写真が先頭に来る", async () => {
+		const user = await seedUser();
+		const trip = await createTrip(env.db, tripInput, user.id);
+		const entry = await createEntry(env.db, trip.id, { kind: "food", title: "かき氷", happenedAt: "2026-03-01T14:00:00Z" }, user.id);
+		await addPhotos(env.db, entry.id, [
+			{ key: "photos/1.jpg", contentType: "image/jpeg" },
+			{ key: "photos/2.jpg", contentType: "image/jpeg" },
+			{ key: "photos/3.jpg", contentType: "image/jpeg" },
+		]);
+		const before = await getEntry(env.db, entry.id);
+		const third = before?.photos[2];
+
+		await setCoverPhoto(env.db, third!.id);
+
+		const found = await getEntry(env.db, entry.id);
+		// 残りの写真は元の順番のまま後ろに続く
+		expect(found?.photos.map((p) => [p.key, p.sortOrder])).toEqual([
+			["photos/3.jpg", 0],
+			["photos/1.jpg", 1],
+			["photos/2.jpg", 2],
+		]);
+	});
+
+	it("すでに先頭の写真をサムネイルにしても並びは変わらない", async () => {
+		const user = await seedUser();
+		const trip = await createTrip(env.db, tripInput, user.id);
+		const entry = await createEntry(env.db, trip.id, { kind: "food", title: "かき氷", happenedAt: "2026-03-01T14:00:00Z" }, user.id);
+		await addPhotos(env.db, entry.id, [
+			{ key: "photos/1.jpg", contentType: "image/jpeg" },
+			{ key: "photos/2.jpg", contentType: "image/jpeg" },
+		]);
+		const before = await getEntry(env.db, entry.id);
+
+		await setCoverPhoto(env.db, before!.photos[0].id);
+
+		const found = await getEntry(env.db, entry.id);
+		expect(found?.photos.map((p) => p.key)).toEqual(["photos/1.jpg", "photos/2.jpg"]);
+	});
+
+	it("存在しない写真を指しても落ちない", async () => {
+		await expect(setCoverPhoto(env.db, 999)).resolves.toBeUndefined();
 	});
 
 	it("種別と評価で絞り込める", async () => {

@@ -18,7 +18,7 @@ vi.mock("next/navigation", async () => {
 		},
 	};
 });
-const { deleteEntryAction, deletePhotoAction, saveEntry } = await import("./entries");
+const { deleteEntryAction, deletePhotoAction, saveEntry, setCoverPhotoAction } = await import("./entries");
 
 beforeAll(async () => {
 	t = await createTestEnv();
@@ -238,5 +238,32 @@ describe("deletePhotoAction", () => {
 
 	it("存在しない写真 ID は無視する", async () => {
 		await expect(deletePhotoAction(formData({ id: 999 }))).resolves.toBeUndefined();
+	});
+});
+
+describe("setCoverPhotoAction", () => {
+	it("選んだ写真を先頭に移し、一覧を作り直す", async () => {
+		const fd = formData(valid);
+		fd.append("photos", fakeImage("image/jpeg", 2048, "a.jpg"));
+		fd.append("photos", fakeImage("image/jpeg", 2048, "b.jpg"));
+		await expectRedirect(() => saveEntry({}, fd));
+		revalidated.length = 0;
+
+		const before = await getEntry(t.db, 1);
+		const second = before!.photos[1];
+		await setCoverPhotoAction(formData({ id: second.id }));
+
+		const after = await getEntry(t.db, 1);
+		expect(after?.photos.map((p) => p.id)).toEqual([second.id, before!.photos[0].id]);
+		// 一覧のサムネイルも変わるので、旅行一覧と旅行ページも作り直す
+		expect(revalidated).toEqual(expect.arrayContaining(["/", "/trips/1", "/trips/1/entries/1"]));
+	});
+
+	it("存在しない写真 ID は無視する", async () => {
+		await expect(setCoverPhotoAction(formData({ id: 999 }))).resolves.toBeUndefined();
+	});
+
+	it("ID が不正なら例外", async () => {
+		await expect(setCoverPhotoAction(formData({ id: "abc" }))).rejects.toThrow(/写真 ID/);
 	});
 });
