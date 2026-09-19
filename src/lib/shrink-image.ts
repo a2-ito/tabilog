@@ -18,6 +18,7 @@
  * DOM を直接触らないよう依存は引数で受け取り、テストできるようにしている。
  */
 
+import { type ImageSize, readImageSize } from "./image-size";
 import { formatBytes, MAX_PHOTO_BYTES } from "./photo-limits";
 
 /** 縮小後の長辺（px） */
@@ -51,8 +52,15 @@ export type CanvasLike = {
 	toBlob(callback: (blob: Blob | null) => void, type?: string, quality?: number): void;
 };
 
+/** createImageBitmap に渡す縮小指定。原寸デコードを避けるために使う */
+export type DecodeOptions = {
+	resizeWidth?: number;
+	resizeHeight?: number;
+	resizeQuality?: "pixelated" | "low" | "medium" | "high";
+};
+
 export type ShrinkDeps = {
-	createImageBitmap: (file: File) => Promise<ImageBitmapLike>;
+	createImageBitmap: (file: File, options?: DecodeOptions) => Promise<ImageBitmapLike>;
 	createCanvas: () => CanvasLike;
 };
 
@@ -81,6 +89,25 @@ export function shouldSkip(file: File): boolean {
 
 function toJpegName(name: string): string {
 	return `${name.replace(/\.[^.]+$/, "")}.jpg`;
+}
+
+/**
+ * デコード時にどこまで縮小させるか。
+ * 寸法が分かれば長辺を MAX_EDGE に合わせ、分からなければ幅だけ抑える
+ * （縦長でも原寸デコードにはならない）。
+ */
+export function decodeOptionsFor(size: ImageSize | null, fileSize = 0): DecodeOptions {
+	if (!size) {
+		// 寸法が読めない。軽いファイルはそのまま、大きいものだけ幅で抑える
+		return fileSize > SKIP_BYTES ? { resizeWidth: MAX_EDGE, resizeQuality: "high" } : { resizeQuality: "high" };
+	}
+	const scale = scaleFor(size.width, size.height);
+	if (scale === 1) return { resizeQuality: "high" };
+	return {
+		resizeWidth: Math.max(1, Math.round(size.width * scale)),
+		resizeHeight: Math.max(1, Math.round(size.height * scale)),
+		resizeQuality: "high",
+	};
 }
 
 /** 1 回ぶんの描き出し。失敗したら null を返す */
@@ -130,10 +157,15 @@ export async function shrinkImage(
 		return file;
 	}
 
+	// 原寸でデコードすると 1200 万画素で 50MB 前後を確保してしまい、
+	// スマホではタブごと落ちる。デコードの時点で縮小させる
+	const size = await readImageSize(file);
+	if (size && scaleFor(size.width, size.height) === 1 && file.size < SKIP_BYTES) return file;
+
 	let bitmap: ImageBitmapLike | null = null;
 	try {
 		try {
-			bitmap = await deps.createImageBitmap(file);
+			bitmap = await deps.createImageBitmap(file, decodeOptionsFor(size, file.size));
 		} catch {
 			throw new PhotoShrinkError(
 				file.name,
@@ -141,8 +173,8 @@ export async function shrinkImage(
 			);
 		}
 
-		// 縮小の必要が無く、もともと軽い画像は再エンコードするだけ無駄
-		if (scaleFor(bitmap.width, bitmap.height) === 1 && file.size < SKIP_BYTES) return file;
+		// 寸法が読めない画像でも、念のためここで判断できるようにしておく
+		if (!size && scaleFor(bitmap.width, bitmap.height) === 1 && file.size < SKIP_BYTES) return file;
 
 		for (const attempt of SHRINK_ATTEMPTS) {
 			const blob = await renderOnce(bitmap, deps, attempt);
@@ -193,6 +225,6 @@ export async function shrinkAll(
 
 /** ブラウザ上での実際の依存 */
 export const browserShrinkDeps: ShrinkDeps = {
-	createImageBitmap: (file) => globalThis.createImageBitmap(file),
+	createImageBitmap: (file, options) => globalThis.createImageBitmap(file, options),
 	createCanvas: () => document.createElement("canvas") as unknown as CanvasLike,
 };
