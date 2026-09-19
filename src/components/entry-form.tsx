@@ -5,6 +5,7 @@ import { saveEntry } from "@/app/actions/entries";
 import type { EntryWithMeta, TripWithCurrencies } from "@/db/queries";
 import { nowWallClock } from "@/lib/datetime";
 import { initialActionState } from "@/lib/form";
+import { MAP_URL_EXAMPLE } from "@/lib/map-url";
 import { currencyLabel, DEFAULT_CURRENCY, minorToInput, normalizeCurrency } from "@/lib/money";
 import { PhotoInput } from "./photo-input";
 import { Field, FormMessage, inputClass, SubmitButton } from "./ui";
@@ -47,6 +48,18 @@ export function EntryForm({ trip, entry }: { trip: TripWithCurrencies; entry?: E
 
 			<Field label="どこで？">
 				<input name="place" defaultValue={entry?.place ?? ""} maxLength={200} className={inputClass} placeholder="鼎泰豐 本店" />
+			</Field>
+
+			<Field label="地図" hint="Google マップの共有 URL を貼ると、記録から地図を開けます">
+				<input
+					type="url"
+					name="mapUrl"
+					defaultValue={entry?.mapUrl ?? ""}
+					maxLength={2000}
+					inputMode="url"
+					className={inputClass}
+					placeholder={MAP_URL_EXAMPLE}
+				/>
 			</Field>
 
 			<div className="grid gap-4 sm:grid-cols-2">

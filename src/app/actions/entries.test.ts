@@ -125,6 +125,17 @@ describe("saveEntry", () => {
 		expect(entry?.rating).toBeNull();
 	});
 
+	it("Google マップの URL を任意で保存する", async () => {
+		await expectRedirect(() => saveEntry({}, formData({ ...valid, mapUrl: " https://maps.app.goo.gl/AbCdEf123 " })));
+		expect((await getEntry(t.db, 1))?.mapUrl).toBe("https://maps.app.goo.gl/AbCdEf123");
+	});
+
+	it("URL を空にすると地図を外せる", async () => {
+		await expectRedirect(() => saveEntry({}, formData({ ...valid, mapUrl: "https://maps.app.goo.gl/AbCdEf123" })));
+		await expectRedirect(() => saveEntry({}, formData({ ...valid, id: 1, mapUrl: "" })));
+		expect((await getEntry(t.db, 1))?.mapUrl).toBeNull();
+	});
+
 	it("写真を R2 に保存して紐づける", async () => {
 		const fd = formData(valid);
 		fd.append("photos", fakeImage("image/jpeg", 2048, "a.jpg"));
@@ -169,6 +180,8 @@ describe("saveEntry", () => {
 		["評価が範囲外", { rating: 9 }, /rating/],
 		["通貨コードの形が不正", { amount: "100", amountCurrency: "TWDD" }, /通貨コード/],
 		["旅行に無い通貨", { amount: "100", amountCurrency: "USD" }, /使えない通貨/],
+		["地図が Google マップ以外の URL", { mapUrl: "https://example.com/maps" }, /Google マップ/],
+		["地図がリンクにできない文字列", { mapUrl: "javascript:alert(1)" }, /Google マップ/],
 	])("%s なら保存せずエラーを返す", async (_name, override, pattern) => {
 		const state = await saveEntry({}, formData({ ...valid, ...override }));
 		expect(state.error).toMatch(pattern);

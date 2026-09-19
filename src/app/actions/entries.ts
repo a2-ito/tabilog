@@ -19,6 +19,7 @@ import { ENTRY_KINDS } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
 import { toWallClock } from "@/lib/datetime";
 import { type ActionState, idFromForm, optionalIdFromForm, optionalText, parseForm } from "@/lib/form";
+import { MAP_URL_EXAMPLE, normalizeMapUrl } from "@/lib/map-url";
 import { DEFAULT_CURRENCY, normalizeCurrency, parseAmountToMinor } from "@/lib/money";
 import { deletePhotos, storePhotos } from "@/lib/photos";
 
@@ -28,6 +29,8 @@ const entrySchema = z.object({
 	kind: z.enum(ENTRY_KINDS),
 	title: z.string().trim().min(1, "何を食べた・買ったかを入力してください").max(200, "タイトルが長すぎます"),
 	place: optionalText(200),
+	/** Google マップの URL（任意）。形は後段で検証する */
+	mapUrl: optionalText(2000),
 	/** 通貨ごとの桁数が要るので、ここでは文字列のまま受けて後段で最小単位に直す */
 	amount: optionalText(30),
 	/** 金額をどの通貨で入力したか。旅行に登録された通貨か円のみ受け付ける */
@@ -46,10 +49,18 @@ export async function saveEntry(_prev: ActionState, formData: FormData): Promise
 	const user = await requireUser();
 	const parsed = parseForm(entrySchema, formData);
 	if (!parsed.ok) return { error: parsed.error };
-	const { id, tripId, amount, amountCurrency, rating, happenedAt, ...rest } = parsed.data;
+	const { id, tripId, amount, amountCurrency, rating, happenedAt, mapUrl, ...rest } = parsed.data;
 
 	const wallClock = toWallClock(happenedAt);
 	if (!wallClock) return { error: "日時の形式が不正です" };
+
+	// リンクとして出すので、Google マップの URL 以外は入れさせない
+	let normalizedMapUrl: string | undefined;
+	if (mapUrl !== undefined) {
+		const normalized = normalizeMapUrl(mapUrl);
+		if (!normalized) return { error: `Google マップの URL を貼ってください（例: ${MAP_URL_EXAMPLE}）` };
+		normalizedMapUrl = normalized;
+	}
 
 	const db = await getDb();
 	const trip = await getTrip(db, tripId);
@@ -71,6 +82,7 @@ export async function saveEntry(_prev: ActionState, formData: FormData): Promise
 
 	const input = {
 		...rest,
+		mapUrl: normalizedMapUrl,
 		amountMinor,
 		amountCurrency: amountMinor === undefined ? undefined : currency,
 		rating: rating === 0 ? undefined : rating,

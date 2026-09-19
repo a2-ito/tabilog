@@ -44,6 +44,17 @@ export default async function EntryPage({ params }: PageProps<"/trips/[id]/entri
 							{entry.place && <span>・{entry.place}</span>}
 							<Rating value={entry.rating} />
 						</p>
+						{/* 保存時に Google マップの URL だけを通しているが、外部リンクなので参照元は渡さない */}
+						{entry.mapUrl && (
+							<a
+								href={entry.mapUrl}
+								target="_blank"
+								rel="noopener noreferrer"
+								className="mt-1 inline-flex items-center gap-1 text-sm text-sky-600 hover:underline dark:text-sky-400"
+							>
+								🗺️ 地図で見る
+							</a>
+						)}
 					</div>
 					<LinkButton href={`/trips/${trip.id}/entries/${entry.id}/edit`}>編集</LinkButton>
 				</div>
