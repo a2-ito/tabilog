@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Rating } from "@/components/rating";
+import { LinkPending } from "@/components/link-pending";
 import { LinkButton } from "@/components/ui";
 import { getDb } from "@/db";
 import { getTrip, listEntries } from "@/db/queries";
@@ -143,9 +144,13 @@ export default async function TripPage({ params, searchParams }: PageProps<"/tri
 									</div>
 								)}
 								<div className="min-w-0 flex-1 space-y-1">
-									<h2 className="font-semibold">
-										<span className="mr-1 text-xs text-zinc-500">{entryKindLabel(entry.kind)}</span>
-										{entry.title}
+									<h2 className="flex items-center gap-2 font-semibold">
+										<span>
+											<span className="mr-1 text-xs text-zinc-500">{entryKindLabel(entry.kind)}</span>
+											{entry.title}
+										</span>
+										{/* 押したカードが反応するように、遷移待ちの間だけぐるぐるを出す */}
+										<LinkPending />
 									</h2>
 									<p className="flex flex-wrap items-center gap-x-2 text-xs text-zinc-500">
 										<span>{formatWallClock(entry.happenedAt)}</span>

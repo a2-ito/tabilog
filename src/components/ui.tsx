@@ -3,7 +3,11 @@
 import Link from "next/link";
 import type { ComponentProps, ReactNode } from "react";
 import { useFormStatus } from "react-dom";
+import { LinkPending } from "./link-pending";
+import { Spinner } from "./spinner";
 import type { ActionState } from "@/lib/form";
+
+export { Spinner };
 
 export const inputClass =
 	"w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 shadow-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100";
@@ -18,24 +22,6 @@ export function Field({ label, children, hint }: { label: string; children: Reac
 	);
 }
 
-/**
- * 処理中であることを示すぐるぐる。
- * 文字と並べて使うので、読み上げは文字側に任せて図形は隠す。
- */
-export function Spinner({ className = "" }: { className?: string }) {
-	return (
-		<svg
-			className={`h-4 w-4 animate-spin ${className}`}
-			viewBox="0 0 24 24"
-			fill="none"
-			aria-hidden="true"
-			focusable="false"
-		>
-			<circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-			<path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 0 1 8-8v4a4 4 0 0 0-4 4H4z" />
-		</svg>
-	);
-}
 
 export function SubmitButton({ children, pendingText = "送信中…", ...props }: ComponentProps<"button"> & { pendingText?: string }) {
 	const { pending } = useFormStatus();
@@ -67,6 +53,7 @@ export function LinkButton({ href, children, variant = "secondary" }: { href: st
 	return (
 		<Link href={href} className={`${base} ${style}`}>
 			{children}
+			<LinkPending className="ml-2" />
 		</Link>
 	);
 }
