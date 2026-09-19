@@ -1,14 +1,15 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { deletePhotoAction } from "@/app/actions/entries";
 import { CommentThreads } from "@/components/comment-thread";
+import { PhotoGallery } from "@/components/photo-gallery";
 import { Rating } from "@/components/rating";
-import { ConfirmForm, DangerButton, LinkButton } from "@/components/ui";
+import { LinkButton } from "@/components/ui";
 import { getDb } from "@/db";
 import { getEntry, getTrip, listComments } from "@/db/queries";
 import { requireUser } from "@/lib/auth";
 import { formatTimestamp, formatWallClock } from "@/lib/datetime";
 import { entryKindLabel } from "@/lib/entry-kinds";
+import { photoFileName } from "@/lib/photo-name";
 import { amountToJpy, DEFAULT_CURRENCY, formatJpy, formatMoney, normalizeCurrency, toRates } from "@/lib/money";
 import { photoUrl } from "@/lib/photos";
 
@@ -25,6 +26,12 @@ export default async function EntryPage({ params }: PageProps<"/trips/[id]/entri
 	const comments = await listComments(db, entry.id);
 
 	const authorName = entry.author.name ?? entry.author.email;
+	// photoUrl は Cloudflare の env に触れるモジュールにあるので、URL はここで作って渡す
+	const galleryPhotos = entry.photos.map((photo, index) => ({
+		id: photo.id,
+		src: photoUrl(photo.key),
+		downloadName: photoFileName(entry.title, index, photo.contentType),
+	}));
 	const entryCurrency = entry.amountCurrency ?? DEFAULT_CURRENCY;
 
 	return (
@@ -83,23 +90,7 @@ export default async function EntryPage({ params }: PageProps<"/trips/[id]/entri
 				)}
 			</div>
 
-			{entry.photos.length > 0 && (
-				<div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-					{entry.photos.map((photo) => (
-						<div key={photo.id} className="space-y-1">
-							<img
-								src={photoUrl(photo.key)}
-								alt=""
-								className="aspect-square w-full rounded-md border border-zinc-200 object-cover dark:border-zinc-700"
-							/>
-							<ConfirmForm action={deletePhotoAction} message="この写真を削除しますか？">
-								<input type="hidden" name="id" value={photo.id} />
-								<DangerButton>写真を削除</DangerButton>
-							</ConfirmForm>
-						</div>
-					))}
-				</div>
-			)}
+			{entry.photos.length > 0 && <PhotoGallery photos={galleryPhotos} />}
 
 			<section className="space-y-4 border-t border-zinc-200 pt-6 dark:border-zinc-800">
 				<h2 className="font-semibold">コメント（{comments.length}）</h2>
