@@ -7,14 +7,16 @@ import { describe, expect, it } from "vitest";
  * 「押したあと反応が無いように見える」のを防ぐ約束だけソースで守る。
  */
 const source = readFileSync(join(process.cwd(), "src/components/ui.tsx"), "utf8");
+// ぐるぐる本体は、ui.tsx と link-pending.tsx の循環 import を避けるため別ファイルにある
+const spinnerSource = readFileSync(join(process.cwd(), "src/components/spinner.tsx"), "utf8");
 
 describe("処理中の表示", () => {
 	it("ぐるぐるは回る（animate-spin を持つ）", () => {
-		expect(source).toMatch(/function Spinner[\s\S]*?animate-spin/);
+		expect(spinnerSource).toMatch(/function Spinner[\s\S]*?animate-spin/);
 	});
 
 	it("ぐるぐるは読み上げから隠す（文字側が状態を伝える）", () => {
-		expect(source).toMatch(/function Spinner[\s\S]*?aria-hidden="true"/);
+		expect(spinnerSource).toMatch(/function Spinner[\s\S]*?aria-hidden="true"/);
 	});
 
 	it("送信するボタンは処理中にぐるぐるを出す", () => {

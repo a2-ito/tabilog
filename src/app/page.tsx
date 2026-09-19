@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { LinkPending } from "@/components/link-pending";
 import { LinkButton } from "@/components/ui";
 import { getDb } from "@/db";
 import { listTrips } from "@/db/queries";
@@ -33,7 +34,11 @@ export default async function HomePage() {
 								className="block rounded-lg border border-zinc-200 bg-white p-4 shadow-sm transition hover:border-sky-400 dark:border-zinc-800 dark:bg-zinc-950"
 							>
 								<div className="flex flex-wrap items-baseline justify-between gap-2">
-									<h2 className="text-lg font-semibold">{trip.name}</h2>
+									<h2 className="flex items-center gap-2 text-lg font-semibold">
+										{trip.name}
+										{/* 押したカードが反応するように、遷移待ちの間だけぐるぐるを出す */}
+										<LinkPending />
+									</h2>
 									<span className="text-sm text-zinc-500">{formatDateRange(trip.startDate, trip.endDate)}</span>
 								</div>
 								<p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
