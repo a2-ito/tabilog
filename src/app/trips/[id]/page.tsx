@@ -26,13 +26,18 @@ export default async function TripPage({ params, searchParams }: PageProps<"/tri
 	const query = await searchParams;
 	const kind = typeof query.kind === "string" && isEntryKind(query.kind) ? query.kind : undefined;
 	const minRating = typeof query.rating === "string" ? Number(query.rating) : undefined;
+	const areaId = typeof query.area === "string" ? Number(query.area) : undefined;
+	// 他の旅行のエリア ID を渡されても効かないようにする
+	const activeArea = trip.areas.find((a) => a.id === areaId);
 	const entries = await listEntries(db, tripId, {
 		kind,
+		areaId: activeArea?.id,
 		minRating: Number.isInteger(minRating) && minRating! >= 1 && minRating! <= 5 ? minRating : undefined,
 	});
 
 	// 記録ごとに通貨が違いうるので、合計は主通貨の円で出し、内訳を通貨ごとに添える
 	const rates = toRates(trip.currencies);
+	const areaNames = new Map(trip.areas.map((a) => [a.id, a.name]));
 	const amounts = entries
 		.filter((e) => e.amountMinor !== null)
 		.map((e) => ({ minor: e.amountMinor as number, currency: e.amountCurrency ?? DEFAULT_CURRENCY }));
@@ -42,6 +47,15 @@ export default async function TripPage({ params, searchParams }: PageProps<"/tri
 		const params = new URLSearchParams();
 		if (k) params.set("kind", k);
 		if (minRating) params.set("rating", String(minRating));
+		if (activeArea) params.set("area", String(activeArea.id));
+		const qs = params.toString();
+		return qs ? `/trips/${tripId}?${qs}` : `/trips/${tripId}`;
+	};
+	const areaHref = (a: number | null) => {
+		const params = new URLSearchParams();
+		if (kind) params.set("kind", kind);
+		if (minRating) params.set("rating", String(minRating));
+		if (a) params.set("area", String(a));
 		const qs = params.toString();
 		return qs ? `/trips/${tripId}?${qs}` : `/trips/${tripId}`;
 	};
@@ -49,6 +63,7 @@ export default async function TripPage({ params, searchParams }: PageProps<"/tri
 		const params = new URLSearchParams();
 		if (kind) params.set("kind", kind);
 		if (r) params.set("rating", String(r));
+		if (activeArea) params.set("area", String(activeArea.id));
 		const qs = params.toString();
 		return qs ? `/trips/${tripId}?${qs}` : `/trips/${tripId}`;
 	};
@@ -116,6 +131,24 @@ export default async function TripPage({ params, searchParams }: PageProps<"/tri
 				</Link>
 			</div>
 
+			{trip.areas.length > 0 && (
+				<div className="flex flex-wrap gap-2 text-sm">
+					{[{ id: 0, name: "すべてのエリア" }, ...trip.areas].map((area) => (
+						<Link
+							key={area.id}
+							href={areaHref(area.id === 0 ? null : area.id)}
+							className={`rounded-full border px-3 py-1 ${
+								(activeArea?.id ?? 0) === area.id
+									? "border-emerald-500 bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"
+									: "border-zinc-300 text-zinc-600 dark:border-zinc-700 dark:text-zinc-400"
+							}`}
+						>
+							{area.id === 0 ? area.name : `📍 ${area.name}`}
+						</Link>
+					))}
+				</div>
+			)}
+
 			{entries.length === 0 ? (
 				<p className="rounded-lg border border-dashed border-zinc-300 p-8 text-center text-sm text-zinc-500 dark:border-zinc-700">
 					記録がありません
@@ -158,10 +191,12 @@ export default async function TripPage({ params, searchParams }: PageProps<"/tri
 										{entry.commentCount > 0 && <span>💬 {entry.commentCount}</span>}
 									</p>
 									{/* 日時と混ざって読みにくかったので、店名は独立した行にする */}
-									{entry.place && (
+									{(entry.place || entry.areaId) && (
 										<p className="flex items-center gap-1 text-xs text-zinc-500">
 											<span aria-hidden="true">📍</span>
-											<span className="truncate">{entry.place}</span>
+											<span className="truncate">
+												{[areaNames.get(entry.areaId ?? 0), entry.place].filter(Boolean).join(" ・ ")}
+											</span>
 										</p>
 									)}
 									{entry.note && (

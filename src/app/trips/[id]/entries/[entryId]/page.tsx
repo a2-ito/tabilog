@@ -33,6 +33,7 @@ export default async function EntryPage({ params }: PageProps<"/trips/[id]/entri
 		downloadName: photoFileName(entry.title, index, photo.contentType),
 	}));
 	const entryCurrency = entry.amountCurrency ?? DEFAULT_CURRENCY;
+	const areaName = trip.areas.find((a) => a.id === entry.areaId)?.name;
 
 	return (
 		<div className="space-y-6">
@@ -47,6 +48,8 @@ export default async function EntryPage({ params }: PageProps<"/trips/[id]/entri
 						<h1 className="text-2xl font-bold">{entry.title}</h1>
 						<p className="mt-1 flex flex-wrap items-center gap-x-2 text-sm text-zinc-500">
 							<span>{formatWallClock(entry.happenedAt)}</span>
+							{/* 旅行に登録したエリア（ミラノなど）。店名より粗い単位で、絞り込みにも使う */}
+							{areaName && <span>・📍 {areaName}</span>}
 							{entry.place && <span>・{entry.place}</span>}
 							<Rating value={entry.rating} />
 						</p>
