@@ -40,6 +40,8 @@ const entrySchema = z.object({
 		.trim()
 		.regex(/^[A-Za-z]{3}$/, "通貨コードは 3 文字で入力してください")
 		.default(DEFAULT_CURRENCY),
+	/** どのエリアの記録か。0 または空は「指定しない」 */
+	areaId: z.coerce.number().int().min(0).default(0),
 	/** 0 は「未評価」 */
 	rating: z.coerce.number().int().min(0).max(5).default(0),
 	note: optionalText(2000),
@@ -50,7 +52,7 @@ export async function saveEntry(_prev: ActionState, formData: FormData): Promise
 	const user = await requireUser();
 	const parsed = parseForm(entrySchema, formData);
 	if (!parsed.ok) return { error: parsed.error };
-	const { id, tripId, amount, amountCurrency, rating, happenedAt, mapUrl, ...rest } = parsed.data;
+	const { id, tripId, amount, amountCurrency, areaId, rating, happenedAt, mapUrl, ...rest } = parsed.data;
 
 	const wallClock = toWallClock(happenedAt);
 	if (!wallClock) return { error: "日時の形式が不正です" };
@@ -81,8 +83,14 @@ export async function saveEntry(_prev: ActionState, formData: FormData): Promise
 		amountMinor = minor;
 	}
 
+	// 他の旅行のエリアを指されないよう、この旅行のものか確かめる
+	if (areaId !== 0 && !trip.areas.some((a) => a.id === areaId)) {
+		return { error: "この旅行にないエリアです" };
+	}
+
 	const input = {
 		...rest,
+		areaId: areaId === 0 ? undefined : areaId,
 		mapUrl: normalizedMapUrl,
 		amountMinor,
 		amountCurrency: amountMinor === undefined ? undefined : currency,

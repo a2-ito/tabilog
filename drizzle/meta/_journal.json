@@ -36,6 +36,13 @@
       "when": 1789794078237,
       "tag": "0004_silent_alice",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1789822814503,
+      "tag": "0005_productive_echo",
+      "breakpoints": true
     }
   ]
 }

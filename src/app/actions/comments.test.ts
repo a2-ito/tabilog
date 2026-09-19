@@ -20,7 +20,7 @@ afterAll(() => t.dispose());
 beforeEach(async () => {
 	await t.truncate();
 	const user = await upsertUser(t.db, { email: "tester@example.com", name: "Tester", image: null });
-	const trip = await createTrip(t.db, { name: "台湾旅行", currencies: [{ code: "TWD", rateToJpy: 4.7 }] }, user.id);
+	const trip = await createTrip(t.db, { name: "台湾旅行", currencies: [{ code: "TWD", rateToJpy: 4.7 }], areas: [] }, user.id);
 	await createEntry(t.db, trip.id, { kind: "food", title: "小籠包", happenedAt: "2026-03-01T12:30" }, user.id);
 	// 別の記録（返信先の取り違えを検出するため）
 	await createEntry(t.db, trip.id, { kind: "food", title: "牛肉麺", happenedAt: "2026-03-02T12:30" }, user.id);

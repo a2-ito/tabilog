@@ -36,10 +36,11 @@ beforeEach(async () => {
 				{ code: "TWD", rateToJpy: 4.7 },
 				{ code: "THB", rateToJpy: 4.3 },
 			],
+			areas: [],
 		},
 		user.id,
 	);
-	await createTrip(t.db, { name: "国内旅行", currencies: [] }, user.id);
+	await createTrip(t.db, { name: "国内旅行", currencies: [], areas: [] }, user.id);
 	revalidated.length = 0;
 });
 
@@ -116,6 +117,17 @@ describe("saveEntry", () => {
 			saveEntry({}, formData({ ...valid, id: 1, amount: "200", amountCurrency: "TWD" })),
 		);
 		expect(await getEntry(t.db, 1)).toMatchObject({ amountMinor: 20000, amountCurrency: "TWD" });
+	});
+
+	it("旅行に無いエリアは受け付けない", async () => {
+		const state = await saveEntry({}, formData({ ...valid, areaId: 999 }));
+		expect(state.error).toMatch(/エリア/);
+		expect(await getEntry(t.db, 1)).toBeNull();
+	});
+
+	it("エリアを指定しなければ未設定で保存する", async () => {
+		await expectRedirect(() => saveEntry({}, formData(valid)));
+		expect((await getEntry(t.db, 1))?.areaId).toBeNull();
 	});
 
 	it("金額と評価は省略できる", async () => {

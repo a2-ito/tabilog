@@ -26,7 +26,7 @@ let env: TestEnv;
 const seedUser = (suffix = "") =>
 	upsertUser(env.db, { email: `taro${suffix}@example.com`, name: `太郎${suffix}`, image: null });
 
-const tripInput = { name: "台湾旅行", currencies: [{ code: "TWD", rateToJpy: 4.7 }] };
+const tripInput = { name: "台湾旅行", currencies: [{ code: "TWD", rateToJpy: 4.7 }], areas: [] };
 
 afterAll(async () => env?.dispose());
 beforeEach(async () => {
@@ -139,6 +139,7 @@ describe("trips", () => {
 					{ code: "THB", rateToJpy: 4.3 },
 					{ code: "VND", rateToJpy: 0.0059 },
 				],
+				areas: [],
 			},
 			user.id,
 		);
@@ -182,7 +183,7 @@ describe("trips", () => {
 	it("更新できる", async () => {
 		const user = await seedUser();
 		const trip = await createTrip(env.db, tripInput, user.id);
-		await updateTrip(env.db, trip.id, { name: "韓国旅行", currencies: [{ code: "KRW", rateToJpy: 0.11 }] });
+		await updateTrip(env.db, trip.id, { name: "韓国旅行", currencies: [{ code: "KRW", rateToJpy: 0.11 }], areas: [] });
 		const found = await getTrip(env.db, trip.id);
 		expect(found?.name).toBe("韓国旅行");
 		// 通貨は入れ替わる（TWD は消えて KRW だけになる）
@@ -290,6 +291,53 @@ describe("entries", () => {
 
 	it("存在しない写真を指しても落ちない", async () => {
 		await expect(setCoverPhoto(env.db, 999)).resolves.toBeUndefined();
+	});
+
+	it("エリアを登録・更新できる（残るエリアの id は変えない）", async () => {
+		const user = await seedUser();
+		const trip = await createTrip(env.db, { ...tripInput, areas: ["ミラノ", "ピサ"] }, user.id);
+		const before = await getTrip(env.db, trip.id);
+		expect(before?.areas.map((a) => a.name)).toEqual(["ミラノ", "ピサ"]);
+
+		const milan = before!.areas[0];
+		await updateTrip(env.db, trip.id, { ...tripInput, areas: ["ミラノ", "ローマ"] });
+
+		const after = await getTrip(env.db, trip.id);
+		expect(after?.areas.map((a) => a.name)).toEqual(["ミラノ", "ローマ"]);
+		// 記録が指しているので、残った「ミラノ」の id は変わってはいけない
+		expect(after?.areas[0].id).toBe(milan.id);
+	});
+
+	it("エリアを消しても、そのエリアの記録は残る", async () => {
+		const user = await seedUser();
+		const trip = await createTrip(env.db, { ...tripInput, areas: ["ミラノ"] }, user.id);
+		const area = (await getTrip(env.db, trip.id))!.areas[0];
+		const entry = await createEntry(
+			env.db,
+			trip.id,
+			{ kind: "food", title: "ピザ", areaId: area.id, happenedAt: "2026-03-01T12:00:00Z" },
+			user.id,
+		);
+
+		await updateTrip(env.db, trip.id, { ...tripInput, areas: [] });
+
+		const found = await getEntry(env.db, entry.id);
+		expect(found?.title).toBe("ピザ");
+		expect(found?.areaId).toBeNull();
+	});
+
+	it("エリアで絞り込める", async () => {
+		const user = await seedUser();
+		const trip = await createTrip(env.db, { ...tripInput, areas: ["ミラノ", "ピサ"] }, user.id);
+		const [milan, pisa] = (await getTrip(env.db, trip.id))!.areas;
+		await createEntry(env.db, trip.id, { kind: "food", title: "ピザ", areaId: milan.id, happenedAt: "2026-03-01T12:00:00Z" }, user.id);
+		await createEntry(env.db, trip.id, { kind: "food", title: "ジェラート", areaId: pisa.id, happenedAt: "2026-03-02T12:00:00Z" }, user.id);
+		// エリア未設定の記録も混ぜる
+		await createEntry(env.db, trip.id, { kind: "other", title: "電車", happenedAt: "2026-03-02T09:00:00Z" }, user.id);
+
+		const inMilan = await listEntries(env.db, trip.id, { areaId: milan.id });
+		expect(inMilan.map((e) => e.title)).toEqual(["ピザ"]);
+		expect(await listEntries(env.db, trip.id)).toHaveLength(3);
 	});
 
 	it("種別と評価で絞り込める", async () => {

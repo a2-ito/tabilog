@@ -51,6 +51,24 @@ export const tripCurrencies = sqliteTable(
 	(t) => [uniqueIndex("trip_currencies_trip_code_idx").on(t.tripId, t.code)],
 );
 
+/**
+ * 旅行の中で訪れた場所（ミラノ・ピサ・ローマなど）。
+ * 記録を都市ごとに見返せるようにするためのもので、店名（entries.place）より粗い単位。
+ */
+export const tripAreas = sqliteTable(
+	"trip_areas",
+	{
+		id: integer("id").primaryKey({ autoIncrement: true }),
+		tripId: integer("trip_id")
+			.notNull()
+			.references(() => trips.id, { onDelete: "cascade" }),
+		name: text("name").notNull(),
+		/** フォームで並べた順。表示順もこれに従う */
+		sortOrder: integer("sort_order").notNull().default(0),
+	},
+	(t) => [uniqueIndex("trip_areas_trip_name_idx").on(t.tripId, t.name)],
+);
+
 /** 何を食べた・何を買ったの 1 件 */
 export const entries = sqliteTable(
 	"entries",
@@ -65,6 +83,8 @@ export const entries = sqliteTable(
 		place: text("place"),
 		/** 場所を地図で開くための Google マップ URL（任意）。src/lib/map-url.ts で検証してから入れる */
 		mapUrl: text("map_url"),
+		/** どのエリアでの記録か（任意）。エリアを消しても記録は残すので null になる */
+		areaId: integer("area_id").references(() => tripAreas.id, { onDelete: "set null" }),
 		/** amountCurrency の最小単位での金額。未入力なら null */
 		amountMinor: integer("amount_minor"),
 		/**
@@ -131,6 +151,7 @@ export const comments = sqliteTable(
 export type User = typeof users.$inferSelect;
 export type Trip = typeof trips.$inferSelect;
 export type TripCurrency = typeof tripCurrencies.$inferSelect;
+export type TripArea = typeof tripAreas.$inferSelect;
 export type Entry = typeof entries.$inferSelect;
 export type EntryPhoto = typeof entryPhotos.$inferSelect;
 export type Comment = typeof comments.$inferSelect;

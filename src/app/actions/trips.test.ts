@@ -33,12 +33,17 @@ beforeEach(async () => {
 const valid = { name: "台湾旅行", startDate: "2026-03-01", endDate: "2026-03-05" };
 
 /** 通貨は 1 行 = (currencyCode, currencyRate) の組で送る */
-function tripForm(fields: Record<string, string | number | undefined>, currencies: [string, string][] = [["twd", "4.7"]]) {
+function tripForm(
+	fields: Record<string, string | number | undefined>,
+	currencies: [string, string][] = [["twd", "4.7"]],
+	areas: string[] = [],
+) {
 	const fd = formData(fields);
 	for (const [code, rate] of currencies) {
 		fd.append("currencyCode", code);
 		fd.append("currencyRate", rate);
 	}
+	for (const area of areas) fd.append("areaName", area);
 	return fd;
 }
 
@@ -113,6 +118,23 @@ describe("saveTrip", () => {
 			expect(await listTrips(t.db)).toHaveLength(0);
 		},
 	);
+
+	it("エリアを登録できる（並べた順のまま）", async () => {
+		await expectRedirect(() => saveTrip({}, tripForm(valid, undefined, ["ミラノ", "ピサ", "ローマ"])));
+		const trip = await getTrip(t.db, 1);
+		expect(trip?.areas.map((a) => a.name)).toEqual(["ミラノ", "ピサ", "ローマ"]);
+	});
+
+	it("空欄のエリアは無視し、前後の空白は落とす", async () => {
+		await expectRedirect(() => saveTrip({}, tripForm(valid, undefined, [" ミラノ ", "", "  "])));
+		expect((await getTrip(t.db, 1))?.areas.map((a) => a.name)).toEqual(["ミラノ"]);
+	});
+
+	it("同じエリア名が重複しているとエラー", async () => {
+		const state = await saveTrip({}, tripForm(valid, undefined, ["ミラノ", "ミラノ"]));
+		expect(state.error).toMatch(/重複/);
+		expect(await listTrips(t.db)).toHaveLength(0);
+	});
 
 	it("存在しない旅行の更新はエラー", async () => {
 		const state = await saveTrip({}, tripForm({ ...valid, id: 999 }));

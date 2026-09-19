@@ -41,6 +41,19 @@ export function EntryForm({ trip, entry }: { trip: TripWithCurrencies; entry?: E
 				<input name="title" defaultValue={entry?.title ?? ""} required maxLength={200} className={inputClass} placeholder="小籠包" />
 			</Field>
 
+			{trip.areas.length > 0 && (
+				<Field label="エリア" hint="旅行に登録した場所から選びます">
+					<select name="areaId" defaultValue={String(entry?.areaId ?? 0)} className={inputClass}>
+						<option value="0">指定しない</option>
+						{trip.areas.map((area) => (
+							<option key={area.id} value={area.id}>
+								{area.name}
+							</option>
+						))}
+					</select>
+				</Field>
+			)}
+
 			<Field label="どこで？">
 				<input name="place" defaultValue={entry?.place ?? ""} maxLength={200} className={inputClass} placeholder="鼎泰豐 本店" />
 			</Field>

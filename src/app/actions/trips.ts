@@ -9,6 +9,7 @@ import { requireUser } from "@/lib/auth";
 import { type ActionState, idFromForm, optionalIdFromForm, optionalText, parseForm } from "@/lib/form";
 import { DEFAULT_CURRENCY, MAX_TRIP_CURRENCIES, normalizeCurrency } from "@/lib/money";
 import { deletePhotos } from "@/lib/photos";
+import { MAX_TRIP_AREAS } from "@/lib/trip-areas";
 
 const optionalDate = z.preprocess(
 	(v) => (typeof v === "string" && v.trim() === "" ? undefined : v),
@@ -72,6 +73,26 @@ function parseCurrencyRows(formData: FormData): CurrencyRows {
 	return { ok: true, rows };
 }
 
+/** エリアは 1 行 1 つ。空行と重複は落とし、並べた順を保つ */
+function parseAreas(formData: FormData): { ok: true; names: string[] } | { ok: false; error: string } {
+	const names: string[] = [];
+	const seen = new Set<string>();
+
+	for (const raw of formData.getAll("areaName")) {
+		if (typeof raw !== "string") continue;
+		const name = raw.trim();
+		if (name === "") continue;
+		if (name.length > 50) return { ok: false, error: "エリア名が長すぎます" };
+		// 同じ名前を 2 つ持てない（記録の指し先が曖昧になる）
+		if (seen.has(name)) return { ok: false, error: `エリア ${name} が重複しています` };
+		seen.add(name);
+		names.push(name);
+	}
+
+	if (names.length > MAX_TRIP_AREAS) return { ok: false, error: `エリアは ${MAX_TRIP_AREAS} 個まで登録できます` };
+	return { ok: true, names };
+}
+
 export async function saveTrip(_prev: ActionState, formData: FormData): Promise<ActionState> {
 	const user = await requireUser();
 	const parsed = parseForm(tripSchema, formData);
@@ -80,8 +101,11 @@ export async function saveTrip(_prev: ActionState, formData: FormData): Promise<
 	const currencies = parseCurrencyRows(formData);
 	if (!currencies.ok) return { error: currencies.error };
 
+	const areas = parseAreas(formData);
+	if (!areas.ok) return { error: areas.error };
+
 	const { id, ...input } = parsed.data;
-	const values = { ...input, currencies: currencies.rows };
+	const values = { ...input, currencies: currencies.rows, areas: areas.names };
 
 	const db = await getDb();
 	let tripId = id;

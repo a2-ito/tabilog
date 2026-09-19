@@ -1,8 +1,8 @@
 import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { DEFAULT_CURRENCY } from "@/lib/money";
 import type { Db } from "./index";
-import { comments, entries, entryPhotos, tripCurrencies, trips, users } from "./schema";
-import type { Comment, Entry, EntryPhoto, Trip, TripCurrency, User } from "./schema";
+import { comments, entries, entryPhotos, tripAreas, tripCurrencies, trips, users } from "./schema";
+import type { Comment, Entry, EntryPhoto, Trip, TripArea, TripCurrency, User } from "./schema";
 
 /* ── users ─────────────────────────────────────────────────── */
 
@@ -27,7 +27,7 @@ export async function upsertUser(
 /* ── trips ─────────────────────────────────────────────────── */
 
 /** 旅行と、そこで使う通貨（円以外）。円は主通貨なので常に使える */
-export type TripWithCurrencies = Trip & { currencies: TripCurrency[] };
+export type TripWithCurrencies = Trip & { currencies: TripCurrency[]; areas: TripArea[] };
 
 export type TripSummary = TripWithCurrencies & {
 	entryCount: number;
@@ -64,14 +64,13 @@ export async function listTrips(db: Db): Promise<TripSummary[]> {
 		byTrip.set(row.tripId, list);
 	}
 
-	const currencies = await listCurrenciesFor(
-		db,
-		rows.map((r) => r.trip.id),
-	);
+	const tripIds = rows.map((r) => r.trip.id);
+	const [currencies, areas] = await Promise.all([listCurrenciesFor(db, tripIds), listAreasFor(db, tripIds)]);
 
 	return rows.map((r) => ({
 		...r.trip,
 		currencies: currencies.get(r.trip.id) ?? [],
+		areas: areas.get(r.trip.id) ?? [],
 		entryCount: Number(r.entryCount),
 		amounts: byTrip.get(r.trip.id) ?? [],
 	}));
@@ -93,11 +92,27 @@ async function listCurrenciesFor(db: Db, tripIds: readonly number[]): Promise<Ma
 	return grouped;
 }
 
+async function listAreasFor(db: Db, tripIds: readonly number[]): Promise<Map<number, TripArea[]>> {
+	const grouped = new Map<number, TripArea[]>();
+	if (tripIds.length === 0) return grouped;
+	const rows = await db
+		.select()
+		.from(tripAreas)
+		.where(inArray(tripAreas.tripId, [...tripIds]))
+		.orderBy(asc(tripAreas.sortOrder), asc(tripAreas.id));
+	for (const row of rows) {
+		const list = grouped.get(row.tripId);
+		if (list) list.push(row);
+		else grouped.set(row.tripId, [row]);
+	}
+	return grouped;
+}
+
 export async function getTrip(db: Db, id: number): Promise<TripWithCurrencies | null> {
 	const [row] = await db.select().from(trips).where(eq(trips.id, id)).limit(1);
 	if (!row) return null;
-	const currencies = await listCurrenciesFor(db, [id]);
-	return { ...row, currencies: currencies.get(id) ?? [] };
+	const [currencies, areas] = await Promise.all([listCurrenciesFor(db, [id]), listAreasFor(db, [id])]);
+	return { ...row, currencies: currencies.get(id) ?? [], areas: areas.get(id) ?? [] };
 }
 
 export type TripCurrencyInput = { code: string; rateToJpy: number };
@@ -108,6 +123,8 @@ export type TripInput = {
 	endDate?: string;
 	/** 円以外に使う通貨。空なら円だけの旅行 */
 	currencies: TripCurrencyInput[];
+	/** 訪れる場所（ミラノ・ピサなど）。空でもよい */
+	areas: string[];
 	note?: string;
 };
 
@@ -124,6 +141,7 @@ export async function createTrip(db: Db, input: TripInput, createdBy: number): P
 		.returning();
 	if (!row) throw new Error("旅行の作成に失敗しました");
 	await replaceTripCurrencies(db, row.id, input.currencies);
+	await replaceTripAreas(db, row.id, input.areas);
 	return row;
 }
 
@@ -139,6 +157,7 @@ export async function updateTrip(db: Db, id: number, input: TripInput): Promise<
 		})
 		.where(eq(trips.id, id));
 	await replaceTripCurrencies(db, id, input.currencies);
+	await replaceTripAreas(db, id, input.areas);
 }
 
 /** 通貨は行の増減も並べ替えもあるので、まとめて入れ替える */
@@ -150,7 +169,31 @@ async function replaceTripCurrencies(db: Db, tripId: number, currencies: readonl
 		.values(currencies.map((c, i) => ({ tripId, code: c.code, rateToJpy: c.rateToJpy, sortOrder: i })));
 }
 
-/** 旅行を削除する。記録・写真・コメント・通貨は外部キーの cascade で消える */
+/**
+ * エリアは名前で指定する。行の増減も並べ替えもあるが、
+ * 残る名前の id は変えない（記録が指しているため）。
+ */
+async function replaceTripAreas(db: Db, tripId: number, names: readonly string[]): Promise<void> {
+	const existing = await db.select().from(tripAreas).where(eq(tripAreas.tripId, tripId));
+	const byName = new Map(existing.map((a) => [a.name, a]));
+
+	for (const area of existing) {
+		// 消されたエリアを指していた記録は、外部キーの set null で残る
+		if (!names.includes(area.name)) await db.delete(tripAreas).where(eq(tripAreas.id, area.id));
+	}
+	for (const [index, name] of names.entries()) {
+		const found = byName.get(name);
+		if (found) {
+			if (found.sortOrder !== index) {
+				await db.update(tripAreas).set({ sortOrder: index }).where(eq(tripAreas.id, found.id));
+			}
+		} else {
+			await db.insert(tripAreas).values({ tripId, name, sortOrder: index });
+		}
+	}
+}
+
+/** 旅行を削除する。記録・写真・コメント・通貨・エリアは外部キーの cascade で消える */
 export async function deleteTrip(db: Db, id: number): Promise<void> {
 	await db.delete(trips).where(eq(trips.id, id));
 }
@@ -176,12 +219,13 @@ export type EntryWithMeta = Entry & {
 
 const authorColumns = { id: users.id, name: users.name, email: users.email, image: users.image };
 
-export type EntryFilter = { kind?: string; minRating?: number };
+export type EntryFilter = { kind?: string; minRating?: number; areaId?: number };
 
 export async function listEntries(db: Db, tripId: number, filter: EntryFilter = {}): Promise<EntryWithMeta[]> {
 	const conditions = [eq(entries.tripId, tripId)];
 	if (filter.kind) conditions.push(eq(entries.kind, filter.kind));
 	if (filter.minRating) conditions.push(sql`${entries.rating} >= ${filter.minRating}`);
+	if (filter.areaId) conditions.push(eq(entries.areaId, filter.areaId));
 
 	const rows = await db
 		.select({
@@ -243,6 +287,8 @@ export type EntryInput = {
 	title: string;
 	place?: string;
 	mapUrl?: string;
+	/** どのエリアか。未指定なら null */
+	areaId?: number;
 	amountMinor?: number;
 	amountCurrency?: string;
 	rating?: number;
@@ -259,6 +305,7 @@ export async function createEntry(db: Db, tripId: number, input: EntryInput, aut
 			title: input.title,
 			place: input.place ?? null,
 			mapUrl: input.mapUrl ?? null,
+			areaId: input.areaId ?? null,
 			amountMinor: input.amountMinor ?? null,
 			amountCurrency: input.amountCurrency ?? null,
 			rating: input.rating ?? null,
@@ -279,6 +326,7 @@ export async function updateEntry(db: Db, id: number, input: EntryInput): Promis
 			title: input.title,
 			place: input.place ?? null,
 			mapUrl: input.mapUrl ?? null,
+			areaId: input.areaId ?? null,
 			amountMinor: input.amountMinor ?? null,
 			amountCurrency: input.amountCurrency ?? null,
 			rating: input.rating ?? null,
