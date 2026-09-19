@@ -125,6 +125,12 @@ describe("saveEntry", () => {
 		expect(entry?.rating).toBeNull();
 	});
 
+	it("「見た」の記録も残せる", async () => {
+		await expectRedirect(() => saveEntry({}, formData({ ...valid, kind: "sightseeing", title: "九份の夜景" })));
+		expect(await getEntry(t.db, 1)).toMatchObject({ kind: "sightseeing", title: "九份の夜景" });
+		expect((await listEntries(t.db, 1, { kind: "sightseeing" })).map((e) => e.title)).toEqual(["九份の夜景"]);
+	});
+
 	it("Google マップの URL を任意で保存する", async () => {
 		await expectRedirect(() => saveEntry({}, formData({ ...valid, mapUrl: " https://maps.app.goo.gl/AbCdEf123 " })));
 		expect((await getEntry(t.db, 1))?.mapUrl).toBe("https://maps.app.goo.gl/AbCdEf123");

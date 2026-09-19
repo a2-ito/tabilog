@@ -51,9 +51,6 @@ export const tripCurrencies = sqliteTable(
 	(t) => [uniqueIndex("trip_currencies_trip_code_idx").on(t.tripId, t.code)],
 );
 
-export const ENTRY_KINDS = ["food", "shopping", "other"] as const;
-export type EntryKind = (typeof ENTRY_KINDS)[number];
-
 /** 何を食べた・何を買ったの 1 件 */
 export const entries = sqliteTable(
 	"entries",
@@ -62,7 +59,7 @@ export const entries = sqliteTable(
 		tripId: integer("trip_id")
 			.notNull()
 			.references(() => trips.id, { onDelete: "cascade" }),
-		/** food | shopping | other */
+		/** 種別。取りうる値は src/lib/entry-kinds.ts */
 		kind: text("kind").notNull().default("food"),
 		title: text("title").notNull(),
 		place: text("place"),

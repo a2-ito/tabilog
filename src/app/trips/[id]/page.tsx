@@ -6,17 +6,11 @@ import { getDb } from "@/db";
 import { getTrip, listEntries } from "@/db/queries";
 import { requireUser } from "@/lib/auth";
 import { formatDateRange, formatWallClock } from "@/lib/datetime";
+import { ENTRY_KIND_OPTIONS, entryKindLabel, isEntryKind } from "@/lib/entry-kinds";
 import { DEFAULT_CURRENCY, formatJpy, formatMoney, sumAsJpy, sumByCurrency, toRates } from "@/lib/money";
 import { photoUrl } from "@/lib/photos";
 
-const KIND_LABELS: Record<string, string> = { food: "🍜 食べた", shopping: "🛍️ 買った", other: "📌 その他" };
-
-const FILTERS = [
-	{ key: "", label: "すべて" },
-	{ key: "food", label: "🍜 食べた" },
-	{ key: "shopping", label: "🛍️ 買った" },
-	{ key: "other", label: "📌 その他" },
-] as const;
+const FILTERS = [{ key: "", label: "すべて" }, ...ENTRY_KIND_OPTIONS.map((k) => ({ key: k.value, label: k.label }))];
 
 export default async function TripPage({ params, searchParams }: PageProps<"/trips/[id]">) {
 	await requireUser();
@@ -29,7 +23,7 @@ export default async function TripPage({ params, searchParams }: PageProps<"/tri
 	if (!trip) notFound();
 
 	const query = await searchParams;
-	const kind = typeof query.kind === "string" && query.kind in KIND_LABELS ? query.kind : undefined;
+	const kind = typeof query.kind === "string" && isEntryKind(query.kind) ? query.kind : undefined;
 	const minRating = typeof query.rating === "string" ? Number(query.rating) : undefined;
 	const entries = await listEntries(db, tripId, {
 		kind,
@@ -143,7 +137,7 @@ export default async function TripPage({ params, searchParams }: PageProps<"/tri
 								<div className="min-w-0 flex-1 space-y-1">
 									<div className="flex flex-wrap items-baseline justify-between gap-2">
 										<h2 className="font-semibold">
-											<span className="mr-1 text-xs text-zinc-500">{KIND_LABELS[entry.kind]}</span>
+											<span className="mr-1 text-xs text-zinc-500">{entryKindLabel(entry.kind)}</span>
 											{entry.title}
 										</h2>
 										{entry.amountMinor != null && (

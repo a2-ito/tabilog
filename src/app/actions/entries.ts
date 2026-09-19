@@ -15,9 +15,9 @@ import {
 	listEntryPhotoKeys,
 	updateEntry,
 } from "@/db/queries";
-import { ENTRY_KINDS } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
 import { toWallClock } from "@/lib/datetime";
+import { ENTRY_KINDS } from "@/lib/entry-kinds";
 import { type ActionState, idFromForm, optionalIdFromForm, optionalText, parseForm } from "@/lib/form";
 import { MAP_URL_EXAMPLE, normalizeMapUrl } from "@/lib/map-url";
 import { DEFAULT_CURRENCY, normalizeCurrency, parseAmountToMinor } from "@/lib/money";

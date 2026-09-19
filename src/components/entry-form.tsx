@@ -4,17 +4,12 @@ import { useActionState, useState } from "react";
 import { saveEntry } from "@/app/actions/entries";
 import type { EntryWithMeta, TripWithCurrencies } from "@/db/queries";
 import { nowWallClock } from "@/lib/datetime";
+import { ENTRY_KIND_OPTIONS } from "@/lib/entry-kinds";
 import { initialActionState } from "@/lib/form";
 import { MAP_URL_EXAMPLE } from "@/lib/map-url";
 import { currencyLabel, DEFAULT_CURRENCY, minorToInput, normalizeCurrency } from "@/lib/money";
 import { PhotoInput } from "./photo-input";
 import { Field, FormMessage, inputClass, SubmitButton } from "./ui";
-
-const KIND_LABELS = [
-	{ value: "food", label: "🍜 食べた" },
-	{ value: "shopping", label: "🛍️ 買った" },
-	{ value: "other", label: "📌 その他" },
-] as const;
 
 export function EntryForm({ trip, entry }: { trip: TripWithCurrencies; entry?: EntryWithMeta }) {
 	const [state, formAction] = useActionState(saveEntry, initialActionState);
@@ -34,7 +29,7 @@ export function EntryForm({ trip, entry }: { trip: TripWithCurrencies; entry?: E
 
 			<Field label="種別">
 				<select name="kind" defaultValue={entry?.kind ?? "food"} className={inputClass}>
-					{KIND_LABELS.map((k) => (
+					{ENTRY_KIND_OPTIONS.map((k) => (
 						<option key={k.value} value={k.value}>
 							{k.label}
 						</option>

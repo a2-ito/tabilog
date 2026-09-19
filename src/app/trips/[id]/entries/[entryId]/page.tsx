@@ -8,10 +8,9 @@ import { getDb } from "@/db";
 import { getEntry, getTrip, listComments } from "@/db/queries";
 import { requireUser } from "@/lib/auth";
 import { formatTimestamp, formatWallClock } from "@/lib/datetime";
+import { entryKindLabel } from "@/lib/entry-kinds";
 import { amountToJpy, DEFAULT_CURRENCY, formatJpy, formatMoney, normalizeCurrency, toRates } from "@/lib/money";
 import { photoUrl } from "@/lib/photos";
-
-const KIND_LABELS: Record<string, string> = { food: "🍜 食べた", shopping: "🛍️ 買った", other: "📌 その他" };
 
 export default async function EntryPage({ params }: PageProps<"/trips/[id]/entries/[entryId]">) {
 	const user = await requireUser();
@@ -37,7 +36,7 @@ export default async function EntryPage({ params }: PageProps<"/trips/[id]/entri
 			<div className="space-y-3">
 				<div className="flex flex-wrap items-start justify-between gap-3">
 					<div>
-						<p className="text-xs text-zinc-500">{KIND_LABELS[entry.kind]}</p>
+						<p className="text-xs text-zinc-500">{entryKindLabel(entry.kind)}</p>
 						<h1 className="text-2xl font-bold">{entry.title}</h1>
 						<p className="mt-1 flex flex-wrap items-center gap-x-2 text-sm text-zinc-500">
 							<span>{formatWallClock(entry.happenedAt)}</span>
