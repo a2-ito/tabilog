@@ -6,7 +6,7 @@ import { getDb } from "@/db";
 import { getTrip, listEntries } from "@/db/queries";
 import { requireUser } from "@/lib/auth";
 import { formatDateRange, formatWallClock } from "@/lib/datetime";
-import { ENTRY_KIND_OPTIONS, entryKindLabel, isEntryKind } from "@/lib/entry-kinds";
+import { ENTRY_KIND_OPTIONS, entryKindEmoji, entryKindLabel, isEntryKind } from "@/lib/entry-kinds";
 import { amountToJpy, DEFAULT_CURRENCY, formatJpy, formatMoney, needsJpyConversion, sumAsJpy, sumByCurrency, toRates } from "@/lib/money";
 import { photoUrl } from "@/lib/photos";
 
@@ -127,12 +127,20 @@ export default async function TripPage({ params, searchParams }: PageProps<"/tri
 								href={`/trips/${trip.id}/entries/${entry.id}`}
 								className="flex gap-3 rounded-lg border border-zinc-200 bg-white p-4 shadow-sm transition hover:border-sky-400 dark:border-zinc-800 dark:bg-zinc-950"
 							>
-								{entry.photos[0] && (
+								{entry.photos[0] ? (
 									<img
 										src={photoUrl(entry.photos[0].key)}
 										alt=""
 										className="h-20 w-20 shrink-0 rounded-md border border-zinc-200 object-cover dark:border-zinc-700"
 									/>
+								) : (
+									// 写真が無いカードだけ左端が欠けて見えるので、種別の絵を置いて幅をそろえる
+									<div
+										aria-hidden="true"
+										className="flex h-20 w-20 shrink-0 items-center justify-center rounded-md border border-dashed border-zinc-300 bg-zinc-50 text-2xl dark:border-zinc-700 dark:bg-zinc-900"
+									>
+										{entryKindEmoji(entry.kind)}
+									</div>
 								)}
 								<div className="min-w-0 flex-1 space-y-1">
 									<h2 className="font-semibold">
