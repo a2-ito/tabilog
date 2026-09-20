@@ -154,29 +154,29 @@ export default async function TripPage({ params, searchParams }: PageProps<"/tri
 					記録がありません
 				</p>
 			) : (
-				<ul className="space-y-3">
+				<ul className="space-y-2">
 					{entries.map((entry) => (
 						<li key={entry.id}>
 							<Link
 								href={`/trips/${trip.id}/entries/${entry.id}`}
-								className="flex gap-3 rounded-lg border border-zinc-200 bg-white p-4 shadow-sm transition hover:border-sky-400 dark:border-zinc-800 dark:bg-zinc-950"
+								className="flex gap-3 rounded-lg border border-zinc-200 bg-white p-3 shadow-sm transition hover:border-sky-400 dark:border-zinc-800 dark:bg-zinc-950"
 							>
 								{entry.photos[0] ? (
 									<img
 										src={photoUrl(entry.photos[0].key)}
 										alt=""
-										className="h-20 w-20 shrink-0 rounded-md border border-zinc-200 object-cover dark:border-zinc-700"
+										className="h-16 w-16 shrink-0 rounded-md border border-zinc-200 object-cover dark:border-zinc-700"
 									/>
 								) : (
 									// 写真が無いカードだけ左端が欠けて見えるので、種別の絵を置いて幅をそろえる
 									<div
 										aria-hidden="true"
-										className="flex h-20 w-20 shrink-0 items-center justify-center rounded-md border border-dashed border-zinc-300 bg-zinc-50 text-2xl dark:border-zinc-700 dark:bg-zinc-900"
+										className="flex h-16 w-16 shrink-0 items-center justify-center rounded-md border border-dashed border-zinc-300 bg-zinc-50 text-xl dark:border-zinc-700 dark:bg-zinc-900"
 									>
 										{entryKindEmoji(entry.kind)}
 									</div>
 								)}
-								<div className="min-w-0 flex-1 space-y-1">
+								<div className="min-w-0 flex-1 space-y-0.5">
 									<h2 className="flex items-center gap-2 font-semibold">
 										<span>
 											<span className="mr-1 text-xs text-zinc-500">{entryKindLabel(entry.kind)}</span>
@@ -200,7 +200,7 @@ export default async function TripPage({ params, searchParams }: PageProps<"/tri
 										</p>
 									)}
 									{entry.note && (
-										<p className="line-clamp-2 text-sm text-zinc-600 dark:text-zinc-400">{entry.note}</p>
+										<p className="line-clamp-1 text-sm text-zinc-600 dark:text-zinc-400">{entry.note}</p>
 									)}
 								</div>
 								{/* 金額は右上に固定する。行に混ぜると題名の長さで位置が動く */}
