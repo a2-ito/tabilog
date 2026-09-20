@@ -68,6 +68,13 @@ export default async function TripPage({ params, searchParams }: PageProps<"/tri
 		return qs ? `/trips/${tripId}?${qs}` : `/trips/${tripId}`;
 	};
 
+	// 畳んだままでも何で絞っているか分かるように、見出しへ並べる
+	const activeFilters = [
+		kind ? entryKindLabel(kind) : null,
+		minRating ? `★${minRating} 以上` : null,
+		activeArea ? `📍 ${activeArea.name}` : null,
+	].filter((v): v is string => v !== null);
+
 	return (
 		<div className="space-y-6">
 			<div className="space-y-2">
@@ -105,49 +112,67 @@ export default async function TripPage({ params, searchParams }: PageProps<"/tri
 				)}
 			</div>
 
-			<div className="flex flex-wrap gap-2 text-sm">
-				{FILTERS.map((f) => (
-					<Link
-						key={f.key}
-						href={filterHref(f.key)}
-						className={`rounded-full border px-3 py-1 ${
-							(kind ?? "") === f.key
-								? "border-sky-500 bg-sky-50 text-sky-700 dark:bg-sky-950 dark:text-sky-300"
-								: "border-zinc-300 text-zinc-600 dark:border-zinc-700 dark:text-zinc-400"
-						}`}
-					>
-						{f.label}
-					</Link>
-				))}
-				<Link
-					href={ratingHref(minRating === 4 ? null : 4)}
-					className={`rounded-full border px-3 py-1 ${
-						minRating === 4
-							? "border-amber-500 bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300"
-							: "border-zinc-300 text-zinc-600 dark:border-zinc-700 dark:text-zinc-400"
-					}`}
-				>
-					★4 以上
-				</Link>
-			</div>
+			{/*
+				チップを常に並べると記録が押し出されるので畳んでおく。
+				何かで絞っている間は開いたままにして、戻し方が見えるようにする
+			*/}
+			<details
+				open={activeFilters.length > 0}
+				className="rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950"
+			>
+				<summary className="cursor-pointer px-4 py-2 text-sm text-zinc-600 dark:text-zinc-400">
+					絞り込み
+					{activeFilters.length > 0 && (
+						<span className="ml-1 font-medium text-zinc-900 dark:text-zinc-100">{activeFilters.join(" ・ ")}</span>
+					)}
+				</summary>
 
-			{trip.areas.length > 0 && (
-				<div className="flex flex-wrap gap-2 text-sm">
-					{[{ id: 0, name: "すべてのエリア" }, ...trip.areas].map((area) => (
+				<div className="space-y-2 border-t border-zinc-200 px-4 py-3 dark:border-zinc-800">
+					<div className="flex flex-wrap gap-2 text-sm">
+						{FILTERS.map((f) => (
+							<Link
+								key={f.key}
+								href={filterHref(f.key)}
+								className={`rounded-full border px-3 py-1 ${
+									(kind ?? "") === f.key
+										? "border-sky-500 bg-sky-50 text-sky-700 dark:bg-sky-950 dark:text-sky-300"
+										: "border-zinc-300 text-zinc-600 dark:border-zinc-700 dark:text-zinc-400"
+								}`}
+							>
+								{f.label}
+							</Link>
+						))}
 						<Link
-							key={area.id}
-							href={areaHref(area.id === 0 ? null : area.id)}
+							href={ratingHref(minRating === 4 ? null : 4)}
 							className={`rounded-full border px-3 py-1 ${
-								(activeArea?.id ?? 0) === area.id
-									? "border-emerald-500 bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"
+								minRating === 4
+									? "border-amber-500 bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300"
 									: "border-zinc-300 text-zinc-600 dark:border-zinc-700 dark:text-zinc-400"
 							}`}
 						>
-							{area.id === 0 ? area.name : `📍 ${area.name}`}
+							★4 以上
 						</Link>
-					))}
+					</div>
+
+					{trip.areas.length > 0 && (
+						<div className="flex flex-wrap gap-2 text-sm">
+							{[{ id: 0, name: "すべてのエリア" }, ...trip.areas].map((area) => (
+								<Link
+									key={area.id}
+									href={areaHref(area.id === 0 ? null : area.id)}
+									className={`rounded-full border px-3 py-1 ${
+										(activeArea?.id ?? 0) === area.id
+											? "border-emerald-500 bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"
+											: "border-zinc-300 text-zinc-600 dark:border-zinc-700 dark:text-zinc-400"
+									}`}
+								>
+									{area.id === 0 ? area.name : `📍 ${area.name}`}
+								</Link>
+							))}
+						</div>
+					)}
 				</div>
-			)}
+			</details>
 
 			{entries.length === 0 ? (
 				<p className="rounded-lg border border-dashed border-zinc-300 p-8 text-center text-sm text-zinc-500 dark:border-zinc-700">
