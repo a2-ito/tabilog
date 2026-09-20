@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import Link from "next/link";
+import { ErrorBanner } from "@/components/error-banner";
 import { ServiceWorkerRegistrar } from "@/components/service-worker";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { auth, signOut } from "@/lib/auth";
@@ -80,6 +81,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 				<Header />
 				<main className="mx-auto max-w-4xl px-4 py-6">{children}</main>
 				<ServiceWorkerRegistrar />
+				<ErrorBanner />
 			</body>
 		</html>
 	);
