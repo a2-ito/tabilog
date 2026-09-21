@@ -224,9 +224,6 @@ export default async function TripPage({ params, searchParams }: PageProps<"/tri
 											</span>
 										</p>
 									)}
-									{entry.note && (
-										<p className="line-clamp-1 text-sm text-zinc-600 dark:text-zinc-400">{entry.note}</p>
-									)}
 								</div>
 								{/* 金額は右上に固定する。行に混ぜると題名の長さで位置が動く */}
 								{entry.amountMinor != null && (
