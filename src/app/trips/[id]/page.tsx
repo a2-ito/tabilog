@@ -7,7 +7,7 @@ import { getDb } from "@/db";
 import { getTrip, listEntries } from "@/db/queries";
 import { requireUser } from "@/lib/auth";
 import { formatDateRange, formatWallClock } from "@/lib/datetime";
-import { ENTRY_KIND_OPTIONS, entryKindEmoji, entryKindLabel, isEntryKind } from "@/lib/entry-kinds";
+import { ENTRY_KIND_OPTIONS, entryKindEmoji, entryKindLabel, entryKindName, isEntryKind } from "@/lib/entry-kinds";
 import { amountToJpy, DEFAULT_CURRENCY, formatJpy, formatMoney, needsJpyConversion, sumAsJpy, sumByCurrency, toRates } from "@/lib/money";
 import { photoUrl } from "@/lib/photos";
 
@@ -204,7 +204,10 @@ export default async function TripPage({ params, searchParams }: PageProps<"/tri
 								<div className="min-w-0 flex-1 space-y-0.5">
 									<h2 className="flex items-center gap-2 font-semibold">
 										<span>
-											<span className="mr-1 text-xs text-zinc-500">{entryKindLabel(entry.kind)}</span>
+											{/* 並べると同じ言葉が続いて読みにくいので、一覧では絵文字だけにする */}
+											<span className="mr-1 text-sm" role="img" aria-label={entryKindName(entry.kind)} title={entryKindName(entry.kind)}>
+												{entryKindEmoji(entry.kind)}
+											</span>
 											{entry.title}
 										</span>
 										{/* 押したカードが反応するように、遷移待ちの間だけぐるぐるを出す */}
