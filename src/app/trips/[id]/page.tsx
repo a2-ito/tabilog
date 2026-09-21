@@ -184,7 +184,7 @@ export default async function TripPage({ params, searchParams }: PageProps<"/tri
 						<li key={entry.id}>
 							<Link
 								href={`/trips/${trip.id}/entries/${entry.id}`}
-								className="flex gap-3 rounded-lg border border-zinc-200 bg-white p-3 shadow-sm transition hover:border-sky-400 dark:border-zinc-800 dark:bg-zinc-950"
+								className="flex gap-2 rounded-lg border border-zinc-200 bg-white p-3 shadow-sm transition hover:border-sky-400 dark:border-zinc-800 dark:bg-zinc-950"
 							>
 								{entry.photos[0] ? (
 									<img
@@ -202,16 +202,19 @@ export default async function TripPage({ params, searchParams }: PageProps<"/tri
 									</div>
 								)}
 								<div className="min-w-0 flex-1 space-y-0.5">
-									<h2 className="flex items-center gap-2 font-semibold">
-										<span>
+									<h2 className="flex items-center gap-1 text-sm font-semibold">
+										{/* 折り返して 2 行になるより、幅いっぱいに出して続きを詰める方が一覧として読みやすい */}
+										<span className="min-w-0 truncate">
 											{/* 並べると同じ言葉が続いて読みにくいので、一覧では絵文字だけにする */}
-											<span className="mr-1 text-sm" role="img" aria-label={entryKindName(entry.kind)} title={entryKindName(entry.kind)}>
+											<span className="mr-1" role="img" aria-label={entryKindName(entry.kind)} title={entryKindName(entry.kind)}>
 												{entryKindEmoji(entry.kind)}
 											</span>
 											{entry.title}
 										</span>
 										{/* 押したカードが反応するように、遷移待ちの間だけぐるぐるを出す */}
-										<LinkPending />
+										<span className="shrink-0">
+											<LinkPending />
+										</span>
 									</h2>
 									<p className="flex flex-wrap items-center gap-x-2 text-xs text-zinc-500">
 										<span>{formatWallClock(entry.happenedAt)}</span>
