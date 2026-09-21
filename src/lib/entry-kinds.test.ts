@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ENTRY_KIND_OPTIONS, ENTRY_KINDS, entryKindEmoji, entryKindLabel, isEntryKind } from "./entry-kinds";
+import { ENTRY_KIND_OPTIONS, ENTRY_KINDS, entryKindEmoji, entryKindLabel, entryKindName, isEntryKind } from "./entry-kinds";
 
 describe("記録の種別", () => {
 	it("すべての種別にラベルがある", () => {
@@ -10,6 +10,13 @@ describe("記録の種別", () => {
 	it("「見た」を選べる", () => {
 		expect(isEntryKind("sightseeing")).toBe(true);
 		expect(entryKindLabel("sightseeing")).toBe("👀 見た");
+	});
+
+	it("絵文字だけを見せる場所のために、名前を取り出せる", () => {
+		// 一覧は絵文字だけ出すので、読み上げや吹き出しにはこちらを渡す
+		expect(entryKindName("food")).toBe("食べた");
+		expect(entryKindName("sightseeing")).toBe("見た");
+		expect(entryKindName("drink")).toBe("drink");
 	});
 
 	it("知らない種別は弾くが、表示では消さない", () => {

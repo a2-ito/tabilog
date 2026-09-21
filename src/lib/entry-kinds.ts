@@ -34,3 +34,12 @@ export function entryKindEmoji(kind: string): string {
 export function entryKindLabel(kind: string): string {
 	return isEntryKind(kind) ? LABELS[kind] : kind;
 }
+
+/**
+ * 絵文字を外した名前。絵文字だけを見せる場所で、読み上げや吹き出しに使う。
+ * 見た目に文字が出なくても何の種別かが伝わるようにするため。
+ */
+export function entryKindName(kind: string): string {
+	const [, name] = entryKindLabel(kind).split(" ");
+	return isEntryKind(kind) && name ? name : kind;
+}
